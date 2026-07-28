@@ -1,0 +1,191 @@
+"""
+Core Engine Orchestrator module.
+Ties together planning, repository parsing, security safety checks, test suites,
+sandboxed runtimes, and the autonomous self-repair cycle.
+"""
+import json
+import os
+from typing import Any
+
+from agent.github import GitHubManager
+from agent.llm import LLMClient
+from agent.memory import PersistentMemory
+from agent.planner import Planner
+from agent.repair import SelfRepairLoop
+from agent.repository import RepositoryAnalyzer
+from agent.security import SecurityManager
+from agent.static_analysis import StaticAnalyzer
+from agent.testing import AutomatedTester
+
+
+class Engine:
+    """
+    The orchestrator that runs the entire autonomous engineering workflow.
+    """
+    def __init__(self, workspace_path: str = ".", db_path: str = "memory.db"):
+        self.workspace_path = os.path.abspath(workspace_path)
+        self.llm = LLMClient()
+        self.planner = Planner(self.llm)
+        self.repo_analyzer = RepositoryAnalyzer(self.workspace_path)
+        self.security = SecurityManager()
+        self.static_analyzer = StaticAnalyzer(self.workspace_path)
+        self.tester = AutomatedTester(self.workspace_path)
+        self.memory = PersistentMemory(db_path)
+        self.repair_loop = SelfRepairLoop(self.llm, self.memory)
+        self.github = GitHubManager(self.workspace_path)
+
+        # State log for current run / session to expose to dashboard
+        self.current_task: str | None = None
+        self.current_plan: dict[str, Any] | None = None
+        self.iteration_count = 0
+        self.logs: list[dict[str, Any]] = []
+
+    def log_event(self, event_type: str, details: Any) -> None:
+        """Appends structured events for status tracking and dashboard visualization."""
+        log_entry = {
+            "timestamp": "now",
+            "event_type": event_type,
+            "details": details
+        }
+        self.logs.append(log_entry)
+
+    def determine_target_file(self, task_description: str) -> str:
+        """
+        Uses repository context and LLM to dynamically select the most appropriate
+        file target to modify/create instead of hardcoding 'src/main.py'.
+        """
+        files = self.repo_analyzer.scan_files()
+        prompt = f"""
+We have a local repository with the following files:
+{json.dumps(files, indent=2)}
+
+And the user wants to accomplish the following task:
+"{task_description}"
+
+Which single file path in the workspace should we create or modify to implement this?
+Respond ONLY with the relative file path. No surrounding text, no formatting.
+Example: src/math.py
+"""
+        target = self.llm.generate(prompt).strip()
+        # Fallback to standard python file
+        if not target or "/" not in target and not target.endswith((".py", ".ts", ".js")):
+            return "src/main.py"
+        return target
+
+    def execute_task(self, task_description: str) -> dict[str, Any]:
+        """
+        Runs the full autonomous architecture pipeline:
+        1. Prompt Safety Scan.
+        2. Plan generation & Risk Assessment.
+        3. Code generation or updates.
+        4. Static Analysis, tests & Sandboxing.
+        5. Self-Repair loop on failures.
+        """
+        self.current_task = task_description
+        self.iteration_count = 0
+        self.logs.clear()
+
+        self.log_event("START_TASK", {"task": task_description})
+
+        # 1. Input Safety Validation
+        is_safe_prompt, prompt_msg = self.security.validate_prompt(task_description)
+        if not is_safe_prompt:
+            self.log_event("SECURITY_BLOCKED", {"message": prompt_msg})
+            return {"status": "blocked", "reason": prompt_msg}
+
+        # 2. Planning
+        plan = self.planner.create_execution_plan(task_description)
+        self.current_plan = plan
+        self.log_event("PLAN_GENERATED", plan)
+        self.memory.log_execution(task_description, plan, "In Progress")
+
+        # 3. Dynamic target file identification & creation
+        target_file = self.determine_target_file(task_description)
+        self.log_event("TARGET_IDENTIFIED", {"target_file": target_file})
+
+        target_path = os.path.join(self.workspace_path, target_file)
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+        # Generate code from LLM
+        prompt = f"Generate complete, robust production-grade code to satisfy this task: {task_description}"
+        generated_code = self.llm.generate(prompt)
+
+        # Sanitize and validate
+        sanitized_code, secrets_removed = self.security.sanitize_code(generated_code)
+        is_safe_code, code_msg = self.security.validate_code_safety(sanitized_code)
+
+        if not is_safe_code:
+            self.log_event("SECURITY_BLOCKED", {"message": code_msg})
+            return {"status": "blocked", "reason": code_msg}
+
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(sanitized_code)
+        self.log_event("WRITE_CODE", {"filepath": target_file, "secrets_removed": secrets_removed})
+
+        # Generate test skeletons automatically for the file
+        if target_file.endswith(".py"):
+            generated_test_file = self.tester.generate_tests(target_file, sanitized_code)
+            self.log_event("TEST_SKELETON_GENERATED", {"test_file": generated_test_file})
+
+        # 4. Verification and Sandboxed Self-Repair Loop (up to 3 iterations)
+        max_iterations = 3
+        success = False
+        error_logs = ""
+
+        for iteration in range(1, max_iterations + 1):
+            self.iteration_count = iteration
+            self.log_event("VERIFICATION_ATTEMPT", {"iteration": iteration})
+
+            # Run Lint / Static Analysis & tests securely inside Docker Sandbox
+            # We construct sandboxed command runs
+            lint_res = self.tester.sandbox.execute_command(f"ruff check {target_file}", bind_dir=self.workspace_path)
+            type_res = self.tester.sandbox.execute_command(f"mypy {target_file} --ignore-missing-imports", bind_dir=self.workspace_path)
+            test_res = self.tester.run_tests_sandboxed(framework="pytest")
+
+            lint_success = (lint_res["exit_code"] == 0)
+            type_success = (type_res["exit_code"] == 0)
+            test_success = (test_res["exit_code"] == 0)
+
+            if lint_success and type_success and test_success:
+                success = True
+                self.log_event("VERIFICATION_SUCCESS", {"iteration": iteration})
+                break
+
+            # Capture issues and run repair
+            error_logs = f"Sandbox Lint Success: {lint_success}. Sandbox Type Success: {type_success}. Sandbox Test Success: {test_success}.\n"
+            if not test_success:
+                error_logs += f"Sandbox Test Output:\n{test_res['stderr'] or test_res['stdout']}\n"
+            if not lint_success:
+                error_logs += f"Sandbox Lint Output:\n{lint_res['stderr'] or lint_res['stdout']}\n"
+            if not type_success:
+                error_logs += f"Sandbox Type Output:\n{type_res['stderr'] or type_res['stdout']}\n"
+
+            self.log_event("VERIFICATION_FAILURE", {"iteration": iteration, "errors": error_logs})
+
+            # Run repair
+            repaired_code = self.repair_loop.run_repair_iteration(target_file, sanitized_code, error_logs)
+            sanitized_code, _ = self.security.sanitize_code(repaired_code)
+
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(sanitized_code)
+
+            self.log_event("APPLIED_REPAIR", {"filepath": target_file})
+
+        if success:
+            self.memory.store_bug_fix("successful-task-fix", "No errors", sanitized_code, target_file)
+
+            # Safe branch and commit via GitHubManager
+            try:
+                # Checkout a dynamic task branch and commit changes securely
+                branch_name = "agent-task-branch"
+                self.github.create_branch(branch_name)
+                commit_sha = self.github.commit_changes(f"feat: implement solutions for {task_description[:50]}")
+                self.log_event("GIT_COMMIT_SUCCESS", {"branch": branch_name, "commit_sha": commit_sha})
+            except Exception as git_err:
+                self.log_event("GIT_COMMIT_SKIPPED", {"detail": str(git_err)})
+
+            self.log_event("TASK_COMPLETE", {"status": "success"})
+            return {"status": "success", "file": target_file, "iterations": self.iteration_count}
+        else:
+            self.log_event("TASK_FAILED", {"status": "failed", "final_error": error_logs})
+            return {"status": "failed", "reason": error_logs, "iterations": self.iteration_count}
