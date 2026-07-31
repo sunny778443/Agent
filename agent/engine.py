@@ -7,6 +7,7 @@ import json
 import os
 from typing import Any
 
+from agent.cognitive import CodeCognitiveNetwork
 from agent.github import GitHubManager
 from agent.llm import LLMClient
 from agent.memory import PersistentMemory
@@ -33,6 +34,7 @@ class Engine:
         self.memory = PersistentMemory(db_path)
         self.repair_loop = SelfRepairLoop(self.llm, self.memory)
         self.github = GitHubManager(self.workspace_path)
+        self.cognitive_net = CodeCognitiveNetwork()
 
         # State log for current run / session to expose to dashboard
         self.current_task: str | None = None
@@ -96,6 +98,12 @@ Example: src/math.py
         # 2. Planning
         plan = self.planner.create_execution_plan(task_description)
         self.current_plan = plan
+
+        # Integrate Cognitive NN prediction to refine the risk assessment score dynamically
+        cognitive_risk = self.cognitive_net.predict_task_risk(task_description)
+        plan["overall_risk_score"] = float(cognitive_risk)
+        plan["risk_assessment"] = "High Risk (Neural Class)" if cognitive_risk > 0.6 else "Standard Cognitive Risk"
+
         self.log_event("PLAN_GENERATED", plan)
         self.memory.log_execution(task_description, plan, "In Progress")
 
@@ -121,6 +129,20 @@ Example: src/math.py
         with open(target_path, "w", encoding="utf-8") as f:
             f.write(sanitized_code)
         self.log_event("WRITE_CODE", {"filepath": target_file, "secrets_removed": secrets_removed})
+
+        # Evaluate the dynamic project graph structures with our neural node mapping
+        try:
+            # Gather file code maps
+            file_contents = {}
+            for f in self.repo_analyzer.scan_files():
+                if f.endswith(".py") and os.path.exists(os.path.join(self.workspace_path, f)):
+                    with open(os.path.join(self.workspace_path, f), "r", encoding="utf-8") as file_read:
+                        file_contents[f] = file_read.read()
+            dep_graph = self.repo_analyzer.build_dependency_graph()
+            cognitive_metrics = self.cognitive_net.process_project_dependency_graph(file_contents, dep_graph)
+            self.log_event("NEURAL_CODEBASE_ANALYSIS", {"metrics": cognitive_metrics})
+        except Exception as cog_err:
+            self.log_event("NEURAL_ANALYSIS_ERROR", {"detail": str(cog_err)})
 
         # Generate test skeletons automatically for the file
         if target_file.endswith(".py"):
