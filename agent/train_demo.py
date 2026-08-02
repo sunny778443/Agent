@@ -5,12 +5,9 @@ saving the weights to a local file, reloading them, and validating improved perf
 """
 
 import os
-import sys
-from agent.cognitive import (
-    CodeCognitiveNetwork,
-    mean_squared_error,
-    transpose
-)
+
+from agent.cognitive import CodeCognitiveNetwork, mean_squared_error, transpose
+
 
 def run_demonstration():
     print("======================================================================")

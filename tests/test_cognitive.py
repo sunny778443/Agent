@@ -2,38 +2,38 @@
 Unit and Integration tests for the Neural Cognitive Module.
 Verifies from-scratch matrix, Layer, attention, GCN, LSTM, and CodeCognitiveNetwork states.
 """
-import unittest
-import math
-import os
 import json
+import os
+import unittest
+
 from agent.cognitive import (
-    dot_product,
-    vector_add,
-    matrix_multiply,
-    matrix_vector_multiply,
-    transpose,
-    sigmoid,
-    softmax,
+    Adam,
+    CodeCognitiveNetwork,
+    CodeHeuristicRanker,
+    CognitiveDatasetLoader,
+    DeepCognitiveBlock,
     DenseLayer,
-    MultiHeadAttention,
     GraphAttentionLayer,
     LSTMCell,
-    CodeCognitiveNetwork,
-    DeepCognitiveBlock,
-    CodeHeuristicRanker,
-    SGDMomentum,
+    MultiHeadAttention,
     RMSprop,
-    Adam,
-    huber_loss,
+    SGDMomentum,
+    StableTrainingPipeline,
     cross_entropy_loss,
-    train_unsupervised_mlm,
-    train_reinforcement_learning,
+    dot_product,
+    huber_loss,
+    matrix_multiply,
+    matrix_vector_multiply,
+    sigmoid,
+    softmax,
     train_evolutionary_strategy,
-    mean_squared_error,
-    CognitiveDatasetLoader,
-    StableTrainingPipeline
+    train_reinforcement_learning,
+    train_unsupervised_mlm,
+    transpose,
+    vector_add,
 )
 from agent.planner import Planner
+
 
 class TestCognitiveModule(unittest.TestCase):
     def test_basic_linear_algebra(self):

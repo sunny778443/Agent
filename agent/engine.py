@@ -1,7 +1,7 @@
 """
 Core Engine Orchestrator module.
 Ties together planning, repository parsing, security safety checks, test suites,
-sandboxed runtimes, and the autonomous self-repair cycle.
+sandboxed runtimes, and the autonomous self-repair cycle with strategy selection.
 """
 import json
 import os
@@ -22,7 +22,7 @@ from agent.testing import AutomatedTester
 
 class Engine:
     """
-    The orchestrator that runs the entire autonomous engineering workflow.
+    The orchestrator that runs the entire autonomous engineering workflow with cognitive decision metrics.
     """
     def __init__(self, workspace_path: str = ".", db_path: str = "memory.db"):
         self.workspace_path = os.path.abspath(workspace_path)
@@ -192,7 +192,7 @@ Example: src/math.py
                 self.log_event("VERIFICATION_SUCCESS", {"iteration": iteration})
                 break
 
-            # Capture issues and run repair
+            # Capture issues and choose best repair strategy
             error_logs = f"Sandbox Lint Success: {lint_success}. Sandbox Type Success: {type_success}. Sandbox Test Success: {test_success}.\n"
             if not test_success:
                 error_logs += f"Sandbox Test Output:\n{test_res['stderr'] or test_res['stdout']}\n"
@@ -203,13 +203,19 @@ Example: src/math.py
 
             self.log_event("VERIFICATION_FAILURE", {"iteration": iteration, "errors": error_logs})
 
-            # Run repair
-            self.log_event("TOOL_SELECTION", {"tool": "SelfRepairLoop", "phase": "repair"})
-            repaired_code = self.repair_loop.run_repair_iteration(target_file, sanitized_code, error_logs)
-            sanitized_code, _ = self.security.sanitize_code(repaired_code)
+            # --- DECIDE OPTIMAL STRATEGY before acting ---
+            if not lint_success and type_success and test_success:
+                # STRATEGY A: Fast local ruff check --fix (bypasses LLM latency entirely!)
+                self.log_event("STRATEGY_SELECTED", {"strategy": "FastLinterAutoFix", "reason": "Ruff formatting issue detected"})
+                self.static_analyzer.repair_lint_issues(target_file, linter="ruff")
+            else:
+                # STRATEGY B: Neural contextual prompt repair loop
+                self.log_event("STRATEGY_SELECTED", {"strategy": "NeuralPromptContextualRepair", "reason": "Structural logic or test failing"})
+                repaired_code = self.repair_loop.run_repair_iteration(target_file, sanitized_code, error_logs)
+                sanitized_code, _ = self.security.sanitize_code(repaired_code)
 
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(sanitized_code)
+                with open(target_path, "w", encoding="utf-8") as f:
+                    f.write(sanitized_code)
 
             self.log_event("APPLIED_REPAIR", {"filepath": target_file})
 

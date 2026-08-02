@@ -17,11 +17,10 @@ It includes:
 - Save & Load capabilities for state persistence.
 """
 
+import json
 import math
 import random
-import json
-from typing import List, Dict, Any, Tuple, Optional
-
+from typing import Any
 
 # =====================================================================
 # BASE SYSTEM INTERFACES
@@ -29,9 +28,9 @@ from typing import List, Dict, Any, Tuple, Optional
 
 class Layer:
     """Base neural layer interface."""
-    def forward(self, inputs: List[float]) -> List[float]:
+    def forward(self, inputs: list[float]) -> list[float]:
         raise NotImplementedError
-    def backward(self, d_out: List[float], lr: float) -> List[float]:
+    def backward(self, d_out: list[float], lr: float) -> list[float]:
         raise NotImplementedError
 
 
@@ -39,88 +38,88 @@ class Layer:
 # PART 1: COMPREHENSIVE VECTOR AND MATRIX MATHEMATICS ENGINE
 # =====================================================================
 
-def dot_product(v1: List[float], v2: List[float]) -> float:
+def dot_product(v1: list[float], v2: list[float]) -> float:
     """Calculates standard dot product of two vectors."""
     if len(v1) != len(v2):
         raise ValueError(f"Dimensions mismatch for dot product: {len(v1)} != {len(v2)}")
     return sum(x * y for x, y in zip(v1, v2))
 
-def vector_add(v1: List[float], v2: List[float]) -> List[float]:
+def vector_add(v1: list[float], v2: list[float]) -> list[float]:
     """Adds two vectors element-wise."""
     if len(v1) != len(v2):
         raise ValueError(f"Dimensions mismatch for addition: {len(v1)} != {len(v2)}")
     return [x + y for x, y in zip(v1, v2)]
 
-def vector_sub(v1: List[float], v2: List[float]) -> List[float]:
+def vector_sub(v1: list[float], v2: list[float]) -> list[float]:
     """Subtracts v2 from v1 element-wise."""
     if len(v1) != len(v2):
         raise ValueError(f"Dimensions mismatch for subtraction: {len(v1)} != {len(v2)}")
     return [x - y for x, y in zip(v1, v2)]
 
-def scale_vector(v: List[float], scalar: float) -> List[float]:
+def scale_vector(v: list[float], scalar: float) -> list[float]:
     """Multiplies all vector elements by a scalar value."""
     return [x * scalar for x in v]
 
-def elementwise_multiply(v1: List[float], v2: List[float]) -> List[float]:
+def elementwise_multiply(v1: list[float], v2: list[float]) -> list[float]:
     """Computes Hadamard product (element-wise multiplication) of two vectors."""
     if len(v1) != len(v2):
         raise ValueError(f"Dimensions mismatch for Hadamard product: {len(v1)} != {len(v2)}")
     return [x * y for x, y in zip(v1, v2)]
 
-def vector_mean(v: List[float]) -> float:
+def vector_mean(v: list[float]) -> float:
     """Calculates arithmetic mean of a vector."""
     if not v:
         return 0.0
     return sum(v) / len(v)
 
-def vector_variance(v: List[float], mean_val: Optional[float] = None) -> float:
+def vector_variance(v: list[float], mean_val: float | None = None) -> float:
     """Calculates statistical variance of a vector."""
     if len(v) <= 1:
         return 0.0
     m = mean_val if mean_val is not None else vector_mean(v)
     return sum((x - m) ** 2 for x in v) / len(v)
 
-def matrix_multiply(m1: List[List[float]], m2: List[List[float]]) -> List[List[float]]:
-    """Performs standard matrix multiplication: m1 x m2."""
+def matrix_multiply(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
+    """Performs standard matrix multiplication: m1 x m2 with high cache performance."""
     r1, c1 = len(m1), len(m1[0])
     r2, c2 = len(m2), len(m2[0])
     if c1 != r2:
         raise ValueError(f"Matrix dimension mismatch: columns of m1 ({c1}) must match rows of m2 ({r2})")
 
+    # Transpose m2 to make inner product sequential in memory (cache friendly)
+    m2_t = [[m2[j][i] for j in range(r2)] for i in range(c2)]
     result = [[0.0] * c2 for _ in range(r1)]
     for i in range(r1):
+        m1_i = m1[i]
         for j in range(c2):
-            val = 0.0
-            for k in range(c1):
-                val += m1[i][k] * m2[k][j]
-            result[i][j] = val
+            result[i][j] = sum(x * y for x, y in zip(m1_i, m2_t[j]))
     return result
 
-def matrix_vector_multiply(m: List[List[float]], v: List[float]) -> List[float]:
+def matrix_vector_multiply(m: list[list[float]], v: list[float]) -> list[float]:
     """Performs matrix-vector multiplication."""
     if len(m[0]) != len(v):
         raise ValueError(f"Dimension mismatch: matrix columns ({len(m[0])}) must match vector size ({len(v)})")
     return [dot_product(row, v) for row in m]
 
-def transpose(m: List[List[float]]) -> List[List[float]]:
+def transpose(m: list[list[float]]) -> list[list[float]]:
     """Calculates transpose of a 2D matrix."""
     if not m or not m[0]:
         return []
     return [[m[j][i] for j in range(len(m))] for i in range(len(m[0]))]
 
-def outer_product(v1: List[float], v2: List[float]) -> List[List[float]]:
+def outer_product(v1: list[float], v2: list[float]) -> list[list[float]]:
     """Computes outer product (tensor product) of two 1D vectors."""
     return [[x * y for y in v2] for x in v1]
 
-def add_matrices(m1: List[List[float]], m2: List[List[float]]) -> List[List[float]]:
+def add_matrices(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
     """Adds two 2D matrices element-wise."""
     return [[x + y for x, y in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
 
-def sub_matrices(m1: List[List[float]], m2: List[List[float]]) -> List[List[float]]:
+def sub_matrices(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
     """Subtracts m2 from m1 element-wise."""
     return [[x - y for x, y in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
 
-def scale_matrix(m: List[List[float]], scalar: float) -> List[List[float]]:
+def scale_matrix(m: list[list[float]], scalar: float) -> list[list[float]]:
     """Scales all elements of a matrix by a constant scalar."""
     return [[x * scalar for x in row] for row in m]
 
@@ -187,7 +186,7 @@ def gelu_derivative(x: float) -> float:
     pdf = math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
     return cdf + x * pdf
 
-def softmax(v: List[float]) -> List[float]:
+def softmax(v: list[float]) -> list[float]:
     """Softmax activation over 1D input array."""
     if not v:
         return []
@@ -208,29 +207,29 @@ def softmax(v: List[float]) -> List[float]:
 # PART 3: REVERSED ENGINEERING LOSS FUNCTIONS
 # =====================================================================
 
-def mean_squared_error(y_pred: List[float], y_true: List[float]) -> float:
+def mean_squared_error(y_pred: list[float], y_true: list[float]) -> float:
     """Mean Squared Error (L2 Loss)."""
     if len(y_pred) != len(y_true):
         raise ValueError("Dimensions mismatch for MSE.")
     return sum((p - t) ** 2 for p, t in zip(y_pred, y_true)) / len(y_pred)
 
-def mean_squared_error_derivative(y_pred: List[float], y_true: List[float]) -> List[float]:
+def mean_squared_error_derivative(y_pred: list[float], y_true: list[float]) -> list[float]:
     """Derivative of MSE with respect to y_pred."""
     n = len(y_pred)
     return [2.0 * (p - t) / n for p, t in zip(y_pred, y_true)]
 
-def mean_absolute_error(y_pred: List[float], y_true: List[float]) -> float:
+def mean_absolute_error(y_pred: list[float], y_true: list[float]) -> float:
     """Mean Absolute Error (L1 Loss)."""
     if len(y_pred) != len(y_true):
         raise ValueError("Dimensions mismatch for MAE.")
     return sum(abs(p - t) for p, t in zip(y_pred, y_true)) / len(y_pred)
 
-def mean_absolute_error_derivative(y_pred: List[float], y_true: List[float]) -> List[float]:
+def mean_absolute_error_derivative(y_pred: list[float], y_true: list[float]) -> list[float]:
     """Derivative of MAE with respect to y_pred."""
     n = len(y_pred)
     return [1.0 / n if p >= t else -1.0 / n for p, t in zip(y_pred, y_true)]
 
-def cross_entropy_loss(y_pred: List[float], y_true: List[float]) -> float:
+def cross_entropy_loss(y_pred: list[float], y_true: list[float]) -> float:
     """Categorical cross-entropy loss with softmax predictions."""
     if len(y_pred) != len(y_true):
         raise ValueError("Dimensions mismatch for cross entropy.")
@@ -241,11 +240,11 @@ def cross_entropy_loss(y_pred: List[float], y_true: List[float]) -> float:
         loss -= t * math.log(p_clipped)
     return loss
 
-def cross_entropy_loss_derivative(y_pred: List[float], y_true: List[float]) -> List[float]:
+def cross_entropy_loss_derivative(y_pred: list[float], y_true: list[float]) -> list[float]:
     """Derivative of cross entropy combined with softmax activation."""
     return [p - t for p, t in zip(y_pred, y_true)]
 
-def huber_loss(y_pred: List[float], y_true: List[float], delta: float = 1.0) -> float:
+def huber_loss(y_pred: list[float], y_true: list[float], delta: float = 1.0) -> float:
     """Robust Huber Loss function."""
     loss = 0.0
     for p, t in zip(y_pred, y_true):
@@ -256,7 +255,7 @@ def huber_loss(y_pred: List[float], y_true: List[float], delta: float = 1.0) -> 
             loss += delta * (diff - 0.5 * delta)
     return loss / len(y_pred)
 
-def huber_loss_derivative(y_pred: List[float], y_true: List[float], delta: float = 1.0) -> List[float]:
+def huber_loss_derivative(y_pred: list[float], y_true: list[float], delta: float = 1.0) -> list[float]:
     """Huber Loss derivative."""
     n = len(y_pred)
     derivs = []
@@ -276,7 +275,7 @@ def huber_loss_derivative(y_pred: List[float], y_true: List[float], delta: float
 
 class Optimizer:
     """Base Optimizer interface."""
-    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+    def update(self, weights: list[list[float]], biases: list[float], dw: list[list[float]], db: list[float], param_id: str) -> tuple[list[list[float]], list[float]]:
         raise NotImplementedError
 
 
@@ -285,10 +284,10 @@ class SGDMomentum(Optimizer):
     def __init__(self, lr: float = 0.01, momentum: float = 0.9):
         self.lr = lr
         self.momentum = momentum
-        self.v_w: Dict[str, List[List[float]]] = {}
-        self.v_b: Dict[str, List[float]] = {}
+        self.v_w: dict[str, list[list[float]]] = {}
+        self.v_b: dict[str, list[float]] = {}
 
-    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+    def update(self, weights: list[list[float]], biases: list[float], dw: list[list[float]], db: list[float], param_id: str) -> tuple[list[list[float]], list[float]]:
         # Initialize momentums
         if param_id not in self.v_w:
             self.v_w[param_id] = [[0.0] * len(row) for row in weights]
@@ -320,10 +319,10 @@ class RMSprop(Optimizer):
         self.lr = lr
         self.beta = beta
         self.eps = eps
-        self.s_w: Dict[str, List[List[float]]] = {}
-        self.s_b: Dict[str, List[float]] = {}
+        self.s_w: dict[str, list[list[float]]] = {}
+        self.s_b: dict[str, list[float]] = {}
 
-    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+    def update(self, weights: list[list[float]], biases: list[float], dw: list[list[float]], db: list[float], param_id: str) -> tuple[list[list[float]], list[float]]:
         if param_id not in self.s_w:
             self.s_w[param_id] = [[0.0] * len(row) for row in weights]
             self.s_b[param_id] = [0.0] * len(biases)
@@ -354,13 +353,13 @@ class Adam(Optimizer):
         self.beta1 = beta1
         self.beta2 = beta2
         self.eps = eps
-        self.m_w: Dict[str, List[List[float]]] = {}
-        self.v_w: Dict[str, List[List[float]]] = {}
-        self.m_b: Dict[str, List[float]] = {}
-        self.v_b: Dict[str, List[float]] = {}
-        self.t: Dict[str, int] = {}
+        self.m_w: dict[str, list[list[float]]] = {}
+        self.v_w: dict[str, list[list[float]]] = {}
+        self.m_b: dict[str, list[float]] = {}
+        self.v_b: dict[str, list[float]] = {}
+        self.t: dict[str, int] = {}
 
-    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+    def update(self, weights: list[list[float]], biases: list[float], dw: list[list[float]], db: list[float], param_id: str) -> tuple[list[list[float]], list[float]]:
         if param_id not in self.m_w:
             self.m_w[param_id] = [[0.0] * len(row) for row in weights]
             self.v_w[param_id] = [[0.0] * len(row) for row in weights]
@@ -412,7 +411,7 @@ class Adam(Optimizer):
 # PART 5: MODULAR NEURAL NETWORK LAYERS FROM SCRATCH
 # =====================================================================
 
-def xavier_init(rows: int, cols: int) -> List[List[float]]:
+def xavier_init(rows: int, cols: int) -> list[list[float]]:
     """Xavier / Glorot weight initialization."""
     limit = math.sqrt(6.0 / (rows + cols))
     return [[random.uniform(-limit, limit) for _ in range(cols)] for _ in range(rows)]
@@ -425,12 +424,12 @@ class LayerNormalization(Layer):
         self.eps = eps
         self.gamma = [1.0] * features
         self.beta = [0.0] * features
-        self.last_inputs: List[float] = []
-        self.last_normalized: List[float] = []
+        self.last_inputs: list[float] = []
+        self.last_normalized: list[float] = []
         self.last_mean = 0.0
         self.last_var = 0.0
 
-    def forward(self, inputs: List[float]) -> List[float]:
+    def forward(self, inputs: list[float]) -> list[float]:
         self.last_inputs = list(inputs)
         mean_val = vector_mean(inputs)
         variance_val = vector_variance(inputs, mean_val)
@@ -444,7 +443,7 @@ class LayerNormalization(Layer):
 
         return [g * n + b for g, n, b in zip(self.gamma, normalized, self.beta)]
 
-    def backward(self, d_out: List[float], lr: float) -> List[float]:
+    def backward(self, d_out: list[float], lr: float) -> list[float]:
         """Calculates exact LayerNorm backward pass."""
         std = math.sqrt(self.last_var + self.eps)
         n = len(self.last_inputs)
@@ -474,10 +473,10 @@ class DropoutLayer(Layer):
     """Regularization Dropout Layer."""
     def __init__(self, rate: float = 0.1):
         self.rate = rate
-        self.mask: List[float] = []
+        self.mask: list[float] = []
         self.training = True
 
-    def forward(self, inputs: List[float]) -> List[float]:
+    def forward(self, inputs: list[float]) -> list[float]:
         if not self.training or self.rate == 0.0:
             return list(inputs)
 
@@ -485,7 +484,7 @@ class DropoutLayer(Layer):
         self.mask = [scale if random.random() >= self.rate else 0.0 for _ in inputs]
         return elementwise_multiply(inputs, self.mask)
 
-    def backward(self, d_out: List[float], lr: float) -> List[float]:
+    def backward(self, d_out: list[float], lr: float) -> list[float]:
         if not self.training or self.rate == 0.0:
             return list(d_out)
         return elementwise_multiply(d_out, self.mask)
@@ -502,11 +501,11 @@ class DenseLayer(Layer):
         self.biases = [0.0] * out_features
         self.optimizer = Adam()
 
-        self.last_inputs: List[float] = []
-        self.last_outputs: List[float] = []
-        self.last_net_inputs: List[float] = []
+        self.last_inputs: list[float] = []
+        self.last_outputs: list[float] = []
+        self.last_net_inputs: list[float] = []
 
-    def forward(self, inputs: List[float]) -> List[float]:
+    def forward(self, inputs: list[float]) -> list[float]:
         self.last_inputs = list(inputs)
         net_inputs = []
         outputs = []
@@ -532,7 +531,7 @@ class DenseLayer(Layer):
         self.last_outputs = outputs
         return outputs
 
-    def backward(self, d_out: List[float], lr: float) -> List[float]:
+    def backward(self, d_out: list[float], lr: float) -> list[float]:
         d_net = [0.0] * self.out_features
 
         for r in range(self.out_features):
@@ -593,7 +592,7 @@ class MultiHeadAttention:
         self.out_proj = xavier_init(embed_dim, embed_dim)
         self.scale = math.sqrt(self.head_dim)
 
-    def forward(self, sequence: List[List[float]]) -> List[List[float]]:
+    def forward(self, sequence: list[list[float]]) -> list[list[float]]:
         seq_len = len(sequence)
         if seq_len == 0:
             return []
@@ -657,7 +656,7 @@ class GraphAttentionLayer:
         self.w = xavier_init(out_features, in_features)
         self.a = [random.uniform(-0.1, 0.1) for _ in range(2 * out_features)]
 
-    def forward(self, node_features: List[List[float]], adj_matrix: List[List[float]]) -> List[List[float]]:
+    def forward(self, node_features: list[list[float]], adj_matrix: list[list[float]]) -> list[list[float]]:
         num_nodes = len(node_features)
         if num_nodes == 0:
             return []
@@ -709,7 +708,7 @@ class LSTMCell(Layer):
         self.b_cell = [0.0] * hidden_dim
         self.b_output = [0.0] * hidden_dim
 
-    def step(self, x: List[float], h_prev: List[float], c_prev: List[float]) -> Tuple[List[float], List[float]]:
+    def step(self, x: list[float], h_prev: list[float], c_prev: list[float]) -> tuple[list[float], list[float]]:
         concat = x + h_prev
 
         f = [sigmoid(dot_product(self.w_forget[i], concat) + self.b_forget[i]) for i in range(self.hidden_dim)]
@@ -747,14 +746,14 @@ class CodeCognitiveNetwork:
         self.dense1 = DenseLayer(embed_dim, 8, activation="leaky_relu")
         self.dense2 = DenseLayer(8, 2, activation="sigmoid") # Predictions: [risk, importance]
 
-    def encode_text_sequence(self, text: str) -> List[List[float]]:
+    def encode_text_sequence(self, text: str) -> list[list[float]]:
         sequence = []
         for char in text[:64]:
             token_idx = ord(char) % self.vocab_size
             sequence.append(list(self.embeddings[token_idx]))
         return sequence
 
-    def process_project_dependency_graph(self, file_contents: Dict[str, str], dependencies: Dict[str, List[str]]) -> Dict[str, List[float]]:
+    def process_project_dependency_graph(self, file_contents: dict[str, str], dependencies: dict[str, list[str]]) -> dict[str, list[float]]:
         filenames = list(file_contents.keys())
         num_files = len(filenames)
         if num_files == 0:
@@ -890,7 +889,7 @@ train_network_supervised(_global_cognitive_net, epochs=10)
 # PART 11: MULTI-PARADIGM ADVANCED TRAINING METHODS
 # =====================================================================
 
-def train_unsupervised_mlm(net: CodeCognitiveNetwork, corpus: List[str], epochs: int = 5) -> None:
+def train_unsupervised_mlm(net: CodeCognitiveNetwork, corpus: list[str], epochs: int = 5) -> None:
     """
     Method 1: Unsupervised Masked Language Modeling (MLM).
     Learns structure by reconstructive masking on custom file corpus strings.
@@ -970,10 +969,10 @@ def train_evolutionary_strategy(net: CodeCognitiveNetwork, population_size: int 
     Method 3: Evolutionary Strategy (Genetic Algorithm) Optimization.
     Mutates weights, evaluates fitness, and selects the strongest parameters.
     """
-    def mutate_matrix(m: List[List[float]], rate: float = 0.05) -> List[List[float]]:
+    def mutate_matrix(m: list[list[float]], rate: float = 0.05) -> list[list[float]]:
         return [[x + random.normalvariate(0.0, 0.1) if random.random() < rate else x for x in row] for row in m]
 
-    def mutate_vector(v: List[float], rate: float = 0.05) -> List[float]:
+    def mutate_vector(v: list[float], rate: float = 0.05) -> list[float]:
         return [x + random.normalvariate(0.0, 0.1) if random.random() < rate else x for x in v]
 
     # Reference evaluation task dataset
@@ -1034,7 +1033,7 @@ class DeepCognitiveBlock:
         self.dense1 = DenseLayer(embed_dim, embed_dim * 2, activation="leaky_relu")
         self.dense2 = DenseLayer(embed_dim * 2, embed_dim, activation="identity")
 
-    def forward(self, sequence: List[List[float]]) -> List[List[float]]:
+    def forward(self, sequence: list[list[float]]) -> list[list[float]]:
         attn_out = self.attention.forward(sequence)
         norm1 = [self.layer_norm.forward(vector_add(x, attn)) for x, attn in zip(sequence, attn_out)]
 
@@ -1051,11 +1050,11 @@ class CodeHeuristicRanker:
         self.feature_dim = feature_dim
         self.similarity_weights = xavier_init(feature_dim, feature_dim)
 
-    def compute_similarity(self, v1: List[float], v2: List[float]) -> float:
+    def compute_similarity(self, v1: list[float], v2: list[float]) -> float:
         proj_v2 = matrix_vector_multiply(self.similarity_weights, v2)
         return dot_product(v1, proj_v2)
 
-    def rank_candidates(self, bug_context_emb: List[float], candidate_patches_embs: List[List[float]]) -> List[int]:
+    def rank_candidates(self, bug_context_emb: list[float], candidate_patches_embs: list[list[float]]) -> list[int]:
         scores = []
         for idx, patch_emb in enumerate(candidate_patches_embs):
             sim = self.compute_similarity(bug_context_emb, patch_emb)
@@ -1070,11 +1069,12 @@ class CodeHeuristicRanker:
 
 import os
 
+
 def clip_value(val: float, limit: float = 5.0) -> float:
     """Clips a scalar value to avoid overflow or underflow."""
     return max(-limit, min(limit, val))
 
-def clip_gradients(gradients: List[float], max_norm: float = 1.0) -> List[float]:
+def clip_gradients(gradients: list[float], max_norm: float = 1.0) -> list[float]:
     """Clips vector gradients to prevent exploding gradients."""
     total_norm = math.sqrt(sum(g ** 2 for g in gradients))
     if total_norm > max_norm:
@@ -1087,7 +1087,7 @@ class CognitiveDatasetLoader:
     Loads task datasets for the cognitive brain engine from JSON or CSV files.
     """
     @staticmethod
-    def load_from_json(filepath: str) -> List[Tuple[str, List[float]]]:
+    def load_from_json(filepath: str) -> list[tuple[str, list[float]]]:
         """Loads dataset from a JSON file. Format: [{"task": "...", "targets": [0.9, 0.8]}]"""
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Dataset JSON file not found: {filepath}")
@@ -1102,7 +1102,7 @@ class CognitiveDatasetLoader:
         return dataset
 
     @staticmethod
-    def load_from_csv(filepath: str) -> List[Tuple[str, List[float]]]:
+    def load_from_csv(filepath: str) -> list[tuple[str, list[float]]]:
         """Loads dataset from a CSV file. Format: task,target_risk,target_priority"""
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Dataset CSV file not found: {filepath}")
@@ -1140,9 +1140,9 @@ class StableTrainingPipeline:
         self.net = net
         self.lr_init = lr_init
         self.decay_rate = decay_rate
-        self.metrics_history: List[Dict[str, Any]] = []
+        self.metrics_history: list[dict[str, Any]] = []
 
-    def split_dataset(self, dataset: List[Tuple[str, List[float]]], val_ratio: float = 0.2, seed: int = 42) -> Tuple[List[Tuple[str, List[float]]], List[Tuple[str, List[float]]]]:
+    def split_dataset(self, dataset: list[tuple[str, list[float]]], val_ratio: float = 0.2, seed: int = 42) -> tuple[list[tuple[str, list[float]]], list[tuple[str, list[float]]]]:
         """Splits data into train and validation sets stably."""
         random.seed(seed)
         shuffled = list(dataset)
@@ -1152,7 +1152,7 @@ class StableTrainingPipeline:
         val_data = shuffled[split_idx:]
         return train_data, val_data
 
-    def evaluate(self, dataset: List[Tuple[str, List[float]]]) -> Dict[str, float]:
+    def evaluate(self, dataset: list[tuple[str, list[float]]]) -> dict[str, float]:
         """Evaluates model performance metrics on a dataset, returning average MSE and MAE."""
         if not dataset:
             return {"mse": 0.0, "mae": 0.0}
@@ -1177,7 +1177,7 @@ class StableTrainingPipeline:
             "mae": total_mae / n
         }
 
-    def train(self, dataset: List[Tuple[str, List[float]]], epochs: int = 20, val_ratio: float = 0.2, checkpoint_path: Optional[str] = "best_cognitive_model.json") -> Dict[str, Any]:
+    def train(self, dataset: list[tuple[str, list[float]]], epochs: int = 20, val_ratio: float = 0.2, checkpoint_path: str | None = "best_cognitive_model.json") -> dict[str, Any]:
         """
         Executes complete training loop with evaluation and checkpointing.
         """

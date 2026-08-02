@@ -4,12 +4,13 @@ Exposes real-time agent memory, task logs, sandbox telemetry, and repository ove
 """
 import json
 import sqlite3
+from typing import Any
+
+import psutil
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
-import os
-import psutil
+
 from agent.engine import Engine
 
 app = FastAPI(title="Autonomous Software Agent Dashboard API", version="1.0.0")
@@ -31,7 +32,7 @@ class TaskRequest(BaseModel):
     task: str
 
 @app.get("/api/status")
-def get_status() -> Dict[str, Any]:
+def get_status() -> dict[str, Any]:
     """Retrieves real-time resource telemetry and current state."""
     cpu = 0.0
     mem_pct = 0.0
@@ -55,7 +56,7 @@ def get_status() -> Dict[str, Any]:
     }
 
 @app.post("/api/task")
-def start_task(req: TaskRequest) -> Dict[str, Any]:
+def start_task(req: TaskRequest) -> dict[str, Any]:
     """Triggers autonomous run for the specified user request."""
     try:
         res = engine.execute_task(req.task)
@@ -64,12 +65,12 @@ def start_task(req: TaskRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/logs")
-def get_logs() -> List[Dict[str, Any]]:
+def get_logs() -> list[dict[str, Any]]:
     """Returns historical run execution details."""
     return engine.logs
 
 @app.get("/api/repository")
-def get_repository() -> Dict[str, Any]:
+def get_repository() -> dict[str, Any]:
     """Exposes mapped project structural maps and AST data."""
     try:
         return engine.repo_analyzer.build_project_context()
@@ -77,7 +78,7 @@ def get_repository() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/memory")
-def get_memory() -> List[Dict[str, Any]]:
+def get_memory() -> list[dict[str, Any]]:
     """Returns stored preferences, keys, and past success profiles."""
     try:
         return engine.memory.get_all_knowledge()
@@ -85,7 +86,7 @@ def get_memory() -> List[Dict[str, Any]]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/reflections")
-def get_reflections() -> List[Dict[str, Any]]:
+def get_reflections() -> list[dict[str, Any]]:
     """Retrieves all self-reflections saved by the agent."""
     try:
         reflections = []
@@ -107,7 +108,7 @@ def get_reflections() -> List[Dict[str, Any]]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/training_metrics")
-def get_training_metrics() -> List[Dict[str, Any]]:
+def get_training_metrics() -> list[dict[str, Any]]:
     """
     Returns standard learning metrics history of the CodeCognitiveNetwork.
     Simulates stable training trace losses if not trained live, ensuring frontend charts can load.
