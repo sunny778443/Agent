@@ -14,6 +14,7 @@ It includes:
 - Stateful Long Short-Term Memory (LSTM) cells for sequential trace modeling
 - High-level CodeCognitiveNetwork orchestrator for risk assessment and bug-likelihood forecasting.
 - Multi-Paradigm Training Routines: Supervised, Unsupervised pre-training, Reinforcement Learning, and Evolutionary Strategy optimization.
+- Save & Load capabilities for state persistence.
 """
 
 import math
@@ -807,6 +808,44 @@ class CodeCognitiveNetwork:
         hidden = self.dense1.forward(norm)
         preds = self.dense2.forward(hidden)
         return preds[0]
+
+    def save_weights(self, filepath: str) -> None:
+        """Saves internal layer weights and biases to a JSON serialization file."""
+        state = {
+            "embeddings": self.embeddings,
+            "dense1_weights": self.dense1.weights,
+            "dense1_biases": self.dense1.biases,
+            "dense2_weights": self.dense2.weights,
+            "dense2_biases": self.dense2.biases,
+            "q_proj": self.attention.q_proj,
+            "k_proj": self.attention.k_proj,
+            "v_proj": self.attention.v_proj,
+            "out_proj": self.attention.out_proj,
+            "gat_w": self.gat.w,
+            "gat_a": self.gat.a,
+            "layernorm_gamma": self.layer_norm.gamma,
+            "layernorm_beta": self.layer_norm.beta
+        }
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+
+    def load_weights(self, filepath: str) -> None:
+        """Loads and reinstates layer parameters from a weights JSON configuration."""
+        with open(filepath, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        self.embeddings = state["embeddings"]
+        self.dense1.weights = state["dense1_weights"]
+        self.dense1.biases = state["dense1_biases"]
+        self.dense2.weights = state["dense2_weights"]
+        self.dense2.biases = state["dense2_biases"]
+        self.attention.q_proj = state["q_proj"]
+        self.attention.k_proj = state["k_proj"]
+        self.attention.v_proj = state["v_proj"]
+        self.attention.out_proj = state["out_proj"]
+        self.gat.w = state["gat_w"]
+        self.gat.a = state["gat_a"]
+        self.layer_norm.gamma = state["layernorm_gamma"]
+        self.layer_norm.beta = state["layernorm_beta"]
 
 
 # =====================================================================

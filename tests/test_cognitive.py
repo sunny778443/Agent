@@ -4,6 +4,7 @@ Verifies from-scratch matrix, Layer, attention, GCN, LSTM, and CodeCognitiveNetw
 """
 import unittest
 import math
+import os
 from agent.cognitive import (
     dot_product,
     vector_add,
@@ -26,7 +27,8 @@ from agent.cognitive import (
     cross_entropy_loss,
     train_unsupervised_mlm,
     train_reinforcement_learning,
-    train_evolutionary_strategy
+    train_evolutionary_strategy,
+    mean_squared_error
 )
 
 class TestCognitiveModule(unittest.TestCase):
@@ -157,6 +159,67 @@ class TestCognitiveModule(unittest.TestCase):
         # Verify predictions still output valid probability scales
         risk = net.predict_task_risk("delete repository")
         self.assertTrue(0.0 <= risk <= 1.0)
+
+    def test_demonstrated_weights_updates_and_loss_reduction(self):
+        """Autotests verifying training updates weight states and dynamically reduces prediction loss."""
+        net = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
+
+        dataset = [
+            ("drop prod tables", [0.99, 0.90]),
+            ("add standard logging framework", [0.05, 0.40])
+        ]
+
+        # Get baseline untrained absolute loss
+        baseline_err = 0.0
+        for task, target in dataset:
+            baseline_err += abs(net.predict_task_risk(task) - target[0])
+
+        # Get baseline weights signature
+        dense2_orig_weights = [[x for x in row] for row in net.dense2.weights]
+
+        # Train for 5 quick epochs
+        lr = 0.1
+        for epoch in range(5):
+            for task, target in dataset:
+                seq = net.encode_text_sequence(task)
+                attended = net.attention.forward(seq)
+                if not attended:
+                    continue
+                avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+                norm = net.layer_norm.forward(avg_pool)
+                h1 = net.dense1.forward(norm)
+                preds = net.dense2.forward(h1)
+
+                loss_grads = [preds[0] - target[0], preds[1] - target[1]]
+                dh1 = net.dense2.backward(loss_grads, lr)
+                net.dense1.backward(dh1, lr)
+
+        # 1. Assert weights changed
+        updated_weights = net.dense2.weights
+        self.assertNotEqual(dense2_orig_weights, updated_weights)
+
+        # 2. Assert error on target set is reduced after backpropagation
+        trained_err = 0.0
+        for task, target in dataset:
+            trained_err += abs(net.predict_task_risk(task) - target[0])
+
+        self.assertLess(trained_err, baseline_err)
+
+        # 3. Verify weights persistence (save/load)
+        weight_filepath = "test_persistence.json"
+        net.save_weights(weight_filepath)
+        self.assertTrue(os.path.exists(weight_filepath))
+
+        # Reload
+        reloaded = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
+        reloaded.load_weights(weight_filepath)
+
+        for task, _ in dataset:
+            self.assertAlmostEqual(net.predict_task_risk(task), reloaded.predict_task_risk(task))
+
+        # clean file
+        if os.path.exists(weight_filepath):
+            os.remove(weight_filepath)
 
 if __name__ == "__main__":
     unittest.main()
