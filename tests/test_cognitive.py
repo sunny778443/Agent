@@ -5,6 +5,7 @@ Verifies from-scratch matrix, Layer, attention, GCN, LSTM, and CodeCognitiveNetw
 import unittest
 import math
 import os
+import json
 from agent.cognitive import (
     dot_product,
     vector_add,
@@ -28,8 +29,11 @@ from agent.cognitive import (
     train_unsupervised_mlm,
     train_reinforcement_learning,
     train_evolutionary_strategy,
-    mean_squared_error
+    mean_squared_error,
+    CognitiveDatasetLoader,
+    StableTrainingPipeline
 )
+from agent.planner import Planner
 
 class TestCognitiveModule(unittest.TestCase):
     def test_basic_linear_algebra(self):
@@ -220,6 +224,60 @@ class TestCognitiveModule(unittest.TestCase):
         # clean file
         if os.path.exists(weight_filepath):
             os.remove(weight_filepath)
+
+    def test_dataset_loaders_and_stable_pipeline(self):
+        """Verifies CSV/JSON custom loaders and the new StableTrainingPipeline."""
+        json_path = "test_data.json"
+        csv_path = "test_data.csv"
+        checkpoint_path = "test_best_model.json"
+
+        # Scaffold JSON
+        test_json = [
+            {"task": "wipe entire server", "targets": [0.99, 0.95]},
+            {"task": "implement simple mathematical calculator helper", "targets": [0.01, 0.20]}
+        ]
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(test_json, f)
+
+        # Scaffold CSV
+        with open(csv_path, "w", encoding="utf-8") as f:
+            f.write("task,target_risk,target_priority\n")
+            f.write("wipe entire server,0.99,0.95\n")
+            f.write("implement simple mathematical calculator helper,0.01,0.20\n")
+
+        # Load
+        loaded_json = CognitiveDatasetLoader.load_from_json(json_path)
+        loaded_csv = CognitiveDatasetLoader.load_from_csv(csv_path)
+
+        self.assertEqual(len(loaded_json), 2)
+        self.assertEqual(len(loaded_csv), 2)
+        self.assertEqual(loaded_json[0][0], "wipe entire server")
+        self.assertEqual(loaded_csv[0][0], "wipe entire server")
+
+        # Test Pipeline
+        net = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
+        pipeline = StableTrainingPipeline(net, lr_init=0.05, decay_rate=0.9)
+
+        res = pipeline.train(loaded_json, epochs=5, val_ratio=0.5, checkpoint_path=checkpoint_path)
+        self.assertEqual(len(pipeline.metrics_history), 5)
+        self.assertTrue(os.path.exists(checkpoint_path))
+
+        # Cleanup
+        for path in [json_path, csv_path, checkpoint_path]:
+            if os.path.exists(path):
+                os.remove(path)
+
+    def test_execution_planning_with_context(self):
+        """Verifies multi-step planning with SQLite context injection and confidence ratings."""
+        planner = Planner()
+        res = planner.create_execution_plan_with_context(
+            "refactor core user authentication modules",
+            memory_context="Found past authentication repairs where user was skipped."
+        )
+        self.assertIn("confidence_score", res)
+        self.assertIn("steps", res)
+        self.assertTrue(len(res["steps"]) >= 2)
+        self.assertIn("verify", res["steps"][0])
 
 if __name__ == "__main__":
     unittest.main()

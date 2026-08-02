@@ -5,6 +5,7 @@ sandboxed runtimes, and the autonomous self-repair cycle.
 """
 import json
 import os
+import time
 from typing import Any
 
 from agent.cognitive import CodeCognitiveNetwork
@@ -77,11 +78,12 @@ Example: src/math.py
     def execute_task(self, task_description: str) -> dict[str, Any]:
         """
         Runs the full autonomous architecture pipeline:
-        1. Prompt Safety Scan.
-        2. Plan generation & Risk Assessment.
-        3. Code generation or updates.
-        4. Static Analysis, tests & Sandboxing.
-        5. Self-Repair loop on failures.
+        1. Pre-reasoning SQLite Memory Retrieval.
+        2. Prompt Safety Scan.
+        3. Plan generation & Risk/Confidence Assessment.
+        4. Tool Selection & Code generation.
+        5. Sandboxed compilation and testing.
+        6. Post-task self-reflection and persistence.
         """
         self.current_task = task_description
         self.iteration_count = 0
@@ -89,14 +91,28 @@ Example: src/math.py
 
         self.log_event("START_TASK", {"task": task_description})
 
-        # 1. Input Safety Validation
+        # 1. Pre-reasoning SQLite Memory Retrieval
+        self.log_event("TOOL_SELECTION", {"tool": "PersistentMemory", "phase": "retrieval"})
+        similar_fixes = self.memory.find_similar_fixes(task_description)
+        memory_context = ""
+        if similar_fixes:
+            memory_context = f"Found {len(similar_fixes)} matching historical bug-fix profiles."
+            for idx, fix in enumerate(similar_fixes[:2]):
+                memory_context += f" Fix #{idx+1}: Signature='{fix['bug_signature']}', Patch='{fix['successful_patch'][:100]}'."
+        else:
+            memory_context = "No direct matching historical bug-fix profiles retrieved from database."
+
+        self.log_event("MEMORY_RETRIEVED", {"context_summary": memory_context})
+
+        # 2. Input Safety Validation
         is_safe_prompt, prompt_msg = self.security.validate_prompt(task_description)
         if not is_safe_prompt:
             self.log_event("SECURITY_BLOCKED", {"message": prompt_msg})
             return {"status": "blocked", "reason": prompt_msg}
 
-        # 2. Planning
-        plan = self.planner.create_execution_plan(task_description)
+        # 3. Plan Generation & Risk/Confidence Assessment
+        self.log_event("TOOL_SELECTION", {"tool": "Planner", "phase": "reasoning"})
+        plan = self.planner.create_execution_plan_with_context(task_description, memory_context=memory_context)
         self.current_plan = plan
 
         # Integrate Cognitive NN prediction to refine the risk assessment score dynamically
@@ -107,7 +123,8 @@ Example: src/math.py
         self.log_event("PLAN_GENERATED", plan)
         self.memory.log_execution(task_description, plan, "In Progress")
 
-        # 3. Dynamic target file identification & creation
+        # 4. Tool Selection & Code Generation
+        self.log_event("TOOL_SELECTION", {"tool": "RepositoryAnalyzer", "phase": "targeting"})
         target_file = self.determine_target_file(task_description)
         self.log_event("TARGET_IDENTIFIED", {"target_file": target_file})
 
@@ -115,6 +132,7 @@ Example: src/math.py
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
         # Generate code from LLM
+        self.log_event("TOOL_SELECTION", {"tool": "LLMClient", "phase": "generation"})
         prompt = f"Generate complete, robust production-grade code to satisfy this task: {task_description}"
         generated_code = self.llm.generate(prompt)
 
@@ -132,7 +150,7 @@ Example: src/math.py
 
         # Evaluate the dynamic project graph structures with our neural node mapping
         try:
-            # Gather file code maps
+            self.log_event("TOOL_SELECTION", {"tool": "CodeCognitiveNetwork", "phase": "graph_analysis"})
             file_contents = {}
             for f in self.repo_analyzer.scan_files():
                 if f.endswith(".py") and os.path.exists(os.path.join(self.workspace_path, f)):
@@ -146,10 +164,11 @@ Example: src/math.py
 
         # Generate test skeletons automatically for the file
         if target_file.endswith(".py"):
+            self.log_event("TOOL_SELECTION", {"tool": "AutomatedTester", "phase": "test_generation"})
             generated_test_file = self.tester.generate_tests(target_file, sanitized_code)
             self.log_event("TEST_SKELETON_GENERATED", {"test_file": generated_test_file})
 
-        # 4. Verification and Sandboxed Self-Repair Loop (up to 3 iterations)
+        # 5. Verification and Sandboxed Self-Repair Loop (up to 3 iterations)
         max_iterations = 3
         success = False
         error_logs = ""
@@ -159,7 +178,7 @@ Example: src/math.py
             self.log_event("VERIFICATION_ATTEMPT", {"iteration": iteration})
 
             # Run Lint / Static Analysis & tests securely inside Docker Sandbox
-            # We construct sandboxed command runs
+            self.log_event("TOOL_SELECTION", {"tool": "SandboxRunner", "phase": "validation"})
             lint_res = self.tester.sandbox.execute_command(f"ruff check {target_file}", bind_dir=self.workspace_path)
             type_res = self.tester.sandbox.execute_command(f"mypy {target_file} --ignore-missing-imports", bind_dir=self.workspace_path)
             test_res = self.tester.run_tests_sandboxed(framework="pytest")
@@ -185,6 +204,7 @@ Example: src/math.py
             self.log_event("VERIFICATION_FAILURE", {"iteration": iteration, "errors": error_logs})
 
             # Run repair
+            self.log_event("TOOL_SELECTION", {"tool": "SelfRepairLoop", "phase": "repair"})
             repaired_code = self.repair_loop.run_repair_iteration(target_file, sanitized_code, error_logs)
             sanitized_code, _ = self.security.sanitize_code(repaired_code)
 
@@ -192,6 +212,20 @@ Example: src/math.py
                 f.write(sanitized_code)
 
             self.log_event("APPLIED_REPAIR", {"filepath": target_file})
+
+        # 6. Post-task Self-Reflection and Persistence
+        self.log_event("TOOL_SELECTION", {"tool": "PersistentMemory", "phase": "reflection"})
+        reflection = {
+            "task": task_description,
+            "target_file": target_file,
+            "verification_success": success,
+            "total_repair_iterations": self.iteration_count,
+            "plan_confidence": plan.get("confidence_score", 0.80),
+            "timestamp": time.time()
+        }
+        reflection_key = f"reflection_{int(time.time())}"
+        self.memory.store_preference(reflection_key, json.dumps(reflection), category="reflections")
+        self.log_event("POST_TASK_REFLECTION", reflection)
 
         if success:
             self.memory.store_bug_fix("successful-task-fix", "No errors", sanitized_code, target_file)

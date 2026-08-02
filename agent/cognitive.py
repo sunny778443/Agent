@@ -1062,3 +1062,179 @@ class CodeHeuristicRanker:
             scores.append((sim, idx))
         scores.sort(key=lambda x: x[0], reverse=True)
         return [idx for _, idx in scores]
+
+
+# =====================================================================
+# PART 13: STABLE TRAINING PIPELINE, VALIDATION, AND EVALUATION
+# =====================================================================
+
+import os
+
+def clip_value(val: float, limit: float = 5.0) -> float:
+    """Clips a scalar value to avoid overflow or underflow."""
+    return max(-limit, min(limit, val))
+
+def clip_gradients(gradients: List[float], max_norm: float = 1.0) -> List[float]:
+    """Clips vector gradients to prevent exploding gradients."""
+    total_norm = math.sqrt(sum(g ** 2 for g in gradients))
+    if total_norm > max_norm:
+        scale = max_norm / (total_norm + 1e-8)
+        return [g * scale for g in gradients]
+    return gradients
+
+class CognitiveDatasetLoader:
+    """
+    Loads task datasets for the cognitive brain engine from JSON or CSV files.
+    """
+    @staticmethod
+    def load_from_json(filepath: str) -> List[Tuple[str, List[float]]]:
+        """Loads dataset from a JSON file. Format: [{"task": "...", "targets": [0.9, 0.8]}]"""
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Dataset JSON file not found: {filepath}")
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        dataset = []
+        for item in data:
+            task = item.get("task", "")
+            targets = item.get("targets", [0.0, 0.0])
+            if task:
+                dataset.append((task, [float(t) for t in targets]))
+        return dataset
+
+    @staticmethod
+    def load_from_csv(filepath: str) -> List[Tuple[str, List[float]]]:
+        """Loads dataset from a CSV file. Format: task,target_risk,target_priority"""
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Dataset CSV file not found: {filepath}")
+        dataset = []
+        with open(filepath, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#") or "," not in line or "target_risk" in line:
+                continue
+            parts = line.split(",", 2)
+            if len(parts) >= 2:
+                task = parts[0].strip().strip('"').strip("'")
+                targets = []
+                for p in parts[1:]:
+                    try:
+                        targets.append(float(p.strip()))
+                    except ValueError:
+                        targets.append(0.0)
+                # Pad to 2 targets
+                while len(targets) < 2:
+                    targets.append(0.0)
+                if task:
+                    dataset.append((task, targets[:2]))
+        return dataset
+
+
+class StableTrainingPipeline:
+    """
+    Implements a production-grade, highly stable training pipeline for CodeCognitiveNetwork.
+    Features validation splits, learning rate scheduling/decay, gradient clipping,
+    learning metrics tracking, and automatic weight checkpointing based on validation loss.
+    """
+    def __init__(self, net: CodeCognitiveNetwork, lr_init: float = 0.02, decay_rate: float = 0.95):
+        self.net = net
+        self.lr_init = lr_init
+        self.decay_rate = decay_rate
+        self.metrics_history: List[Dict[str, Any]] = []
+
+    def split_dataset(self, dataset: List[Tuple[str, List[float]]], val_ratio: float = 0.2, seed: int = 42) -> Tuple[List[Tuple[str, List[float]]], List[Tuple[str, List[float]]]]:
+        """Splits data into train and validation sets stably."""
+        random.seed(seed)
+        shuffled = list(dataset)
+        random.shuffle(shuffled)
+        split_idx = int(len(shuffled) * (1.0 - val_ratio))
+        train_data = shuffled[:split_idx]
+        val_data = shuffled[split_idx:]
+        return train_data, val_data
+
+    def evaluate(self, dataset: List[Tuple[str, List[float]]]) -> Dict[str, float]:
+        """Evaluates model performance metrics on a dataset, returning average MSE and MAE."""
+        if not dataset:
+            return {"mse": 0.0, "mae": 0.0}
+        total_mse = 0.0
+        total_mae = 0.0
+        for text, targets in dataset:
+            seq = self.net.encode_text_sequence(text)
+            attended = self.net.attention.forward(seq)
+            if not attended:
+                continue
+            avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+            norm = self.net.layer_norm.forward(avg_pool)
+            h1 = self.net.dense1.forward(norm)
+            preds = self.net.dense2.forward(h1)
+
+            total_mse += mean_squared_error(preds, targets)
+            total_mae += sum(abs(p - t) for p, t in zip(preds, targets)) / len(targets)
+
+        n = len(dataset)
+        return {
+            "mse": total_mse / n,
+            "mae": total_mae / n
+        }
+
+    def train(self, dataset: List[Tuple[str, List[float]]], epochs: int = 20, val_ratio: float = 0.2, checkpoint_path: Optional[str] = "best_cognitive_model.json") -> Dict[str, Any]:
+        """
+        Executes complete training loop with evaluation and checkpointing.
+        """
+        train_data, val_data = self.split_dataset(dataset, val_ratio=val_ratio)
+        best_val_loss = float("inf")
+        lr = self.lr_init
+
+        for epoch in range(1, epochs + 1):
+            epoch_losses = []
+            # Supervised training steps with gradient clipping
+            for text, targets in train_data:
+                seq = self.net.encode_text_sequence(text)
+                attended = self.net.attention.forward(seq)
+                if not attended:
+                    continue
+                avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+                norm = self.net.layer_norm.forward(avg_pool)
+                h1 = self.net.dense1.forward(norm)
+                preds = self.net.dense2.forward(h1)
+
+                loss = mean_squared_error(preds, targets)
+                epoch_losses.append(loss)
+
+                # Backprop with clipped gradients
+                loss_grads = [preds[0] - targets[0], preds[1] - targets[1]]
+                loss_grads = clip_gradients(loss_grads, max_norm=1.0)
+
+                dh1 = self.net.dense2.backward(loss_grads, lr)
+                dh1 = clip_gradients(dh1, max_norm=1.0)
+                self.net.dense1.backward(dh1, lr)
+
+            # Compute learning and validation metrics
+            train_metrics = self.evaluate(train_data)
+            val_metrics = self.evaluate(val_data) if val_data else train_metrics
+
+            epoch_loss = sum(epoch_losses) / len(epoch_losses) if epoch_losses else 0.0
+            metrics_entry = {
+                "epoch": epoch,
+                "learning_rate": lr,
+                "train_loss": epoch_loss,
+                "train_mae": train_metrics["mae"],
+                "val_loss": val_metrics["mse"],
+                "val_mae": val_metrics["mae"]
+            }
+            self.metrics_history.append(metrics_entry)
+
+            # Checkpointing
+            val_loss = val_metrics["mse"]
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                if checkpoint_path:
+                    self.net.save_weights(checkpoint_path)
+
+            # Learning rate scheduling decay
+            lr *= self.decay_rate
+
+        return {
+            "best_val_loss": best_val_loss,
+            "history": self.metrics_history
+        }
