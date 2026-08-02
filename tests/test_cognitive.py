@@ -23,7 +23,10 @@ from agent.cognitive import (
     RMSprop,
     Adam,
     huber_loss,
-    cross_entropy_loss
+    cross_entropy_loss,
+    train_unsupervised_mlm,
+    train_reinforcement_learning,
+    train_evolutionary_strategy
 )
 
 class TestCognitiveModule(unittest.TestCase):
@@ -137,6 +140,23 @@ class TestCognitiveModule(unittest.TestCase):
         self.assertEqual(opt_momentum.lr, 0.01)
         self.assertEqual(opt_rmsprop.lr, 0.001)
         self.assertEqual(opt_adam.lr, 0.001)
+
+    def test_multi_paradigm_trainings(self):
+        net = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
+
+        # Test Unsupervised Masked Language Modeling
+        corpus = ["def hello(): return 'world'", "class Matrix: pass", "import os"]
+        train_unsupervised_mlm(net, corpus, epochs=2)
+
+        # Test Reinforcement Learning
+        train_reinforcement_learning(net, episodes=2)
+
+        # Test Evolutionary Strategies
+        train_evolutionary_strategy(net, population_size=4, generations=2)
+
+        # Verify predictions still output valid probability scales
+        risk = net.predict_task_risk("delete repository")
+        self.assertTrue(0.0 <= risk <= 1.0)
 
 if __name__ == "__main__":
     unittest.main()

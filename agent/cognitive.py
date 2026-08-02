@@ -13,6 +13,7 @@ It includes:
 - Graph Attention Network (GAT) Layer for code AST and dependency graph learning
 - Stateful Long Short-Term Memory (LSTM) cells for sequential trace modeling
 - High-level CodeCognitiveNetwork orchestrator for risk assessment and bug-likelihood forecasting.
+- Multi-Paradigm Training Routines: Supervised, Unsupervised pre-training, Reinforcement Learning, and Evolutionary Strategy optimization.
 """
 
 import math
@@ -847,7 +848,143 @@ train_network_supervised(_global_cognitive_net, epochs=10)
 
 
 # =====================================================================
-# PART 11: HEURISTIC SEARCH AND STACKED NEURAL BLOCK MODULES
+# PART 11: MULTI-PARADIGM ADVANCED TRAINING METHODS
+# =====================================================================
+
+def train_unsupervised_mlm(net: CodeCognitiveNetwork, corpus: List[str], epochs: int = 5) -> None:
+    """
+    Method 1: Unsupervised Masked Language Modeling (MLM).
+    Learns structure by reconstructive masking on custom file corpus strings.
+    """
+    lr = 0.01
+    for _ in range(epochs):
+        for document in corpus:
+            if len(document) < 10:
+                continue
+            # Select random index to mask
+            mask_char_idx = random.randint(3, len(document) - 5)
+            masked_text = document[:mask_char_idx] + "_" + document[mask_char_idx+1:]
+            target_char = document[mask_char_idx]
+
+            # Forward pass using masked sequence
+            seq = net.encode_text_sequence(masked_text)
+            attended = net.attention.forward(seq)
+            if not attended:
+                continue
+            avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+            norm = net.layer_norm.forward(avg_pool)
+
+            # Predict target dimensions
+            h1 = net.dense1.forward(norm)
+            preds = net.dense2.forward(h1)
+
+            # Supervise towards high risk representation if mask target is a symbol
+            target_risk = 0.8 if target_char in [":", "(", ")", "[", "]", "=", "."] else 0.2
+            loss_grads = [preds[0] - target_risk, preds[1] - 0.5]
+
+            dh1 = net.dense2.backward(loss_grads, lr)
+            net.dense1.backward(dh1, lr)
+
+
+def train_reinforcement_learning(net: CodeCognitiveNetwork, episodes: int = 10) -> None:
+    """
+    Method 2: Policy-Gradient REINFORCE Style Reinforcement Learning.
+    Guides agent weights via success feedback loops (rewards).
+    """
+    lr = 0.01
+    # States are tasks, Actions are predicted risks
+    simulated_env_tasks = [
+        ("delete db", 0.95), # high risk target
+        ("lint file", 0.10), # low risk target
+        ("clean drive", 0.80),
+        ("write test", 0.15)
+    ]
+
+    for _ in range(episodes):
+        for task, ideal_risk in simulated_env_tasks:
+            # 1. Forward pass (action exploration)
+            seq = net.encode_text_sequence(task)
+            attended = net.attention.forward(seq)
+            if not attended:
+                continue
+            avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+            norm = net.layer_norm.forward(avg_pool)
+
+            h1 = net.dense1.forward(norm)
+            preds = net.dense2.forward(h1)
+            action_risk = preds[0]
+
+            # Calculate reward (higher reward if predicted risk is close to ideal)
+            reward = 1.0 - abs(action_risk - ideal_risk)
+
+            # Policy gradient update (loss scaled by reward)
+            # Minimize negative log-likelihood * reward
+            grad = [(action_risk - ideal_risk) * (1.0 - reward)]
+            loss_grads = [grad[0], 0.0]
+
+            dh1 = net.dense2.backward(loss_grads, lr)
+            net.dense1.backward(dh1, lr)
+
+
+def train_evolutionary_strategy(net: CodeCognitiveNetwork, population_size: int = 8, generations: int = 3) -> None:
+    """
+    Method 3: Evolutionary Strategy (Genetic Algorithm) Optimization.
+    Mutates weights, evaluates fitness, and selects the strongest parameters.
+    """
+    def mutate_matrix(m: List[List[float]], rate: float = 0.05) -> List[List[float]]:
+        return [[x + random.normalvariate(0.0, 0.1) if random.random() < rate else x for x in row] for row in m]
+
+    def mutate_vector(v: List[float], rate: float = 0.05) -> List[float]:
+        return [x + random.normalvariate(0.0, 0.1) if random.random() < rate else x for x in v]
+
+    # Reference evaluation task dataset
+    eval_tasks = [("delete db", 0.95), ("write test", 0.15)]
+
+    for gen in range(generations):
+        population = []
+        # Generate mutant population from current network
+        for i in range(population_size):
+            # Clone and mutate weights
+            mutant_w1 = mutate_matrix(net.dense1.weights)
+            mutant_b1 = mutate_vector(net.dense1.biases)
+            mutant_w2 = mutate_matrix(net.dense2.weights)
+            mutant_b2 = mutate_vector(net.dense2.biases)
+            population.append((mutant_w1, mutant_b1, mutant_w2, mutant_b2))
+
+        # Evaluate fitness (negative mean error)
+        fitness_scores = []
+        for index, (w1, b1, w2, b2) in enumerate(population):
+            # Temporarily set mutant parameters
+            orig_w1, orig_b1 = net.dense1.weights, net.dense1.biases
+            orig_w2, orig_b2 = net.dense2.weights, net.dense2.biases
+
+            net.dense1.weights, net.dense1.biases = w1, b1
+            net.dense2.weights, net.dense2.biases = w2, b2
+
+            # Compute total absolute deviation
+            total_error = 0.0
+            for task, ideal in eval_tasks:
+                risk = net.predict_task_risk(task)
+                total_error += abs(risk - ideal)
+
+            # Restore
+            net.dense1.weights, net.dense1.biases = orig_w1, orig_b1
+            net.dense2.weights, net.dense2.biases = orig_w2, orig_b2
+
+            fitness_scores.append((total_error, index))
+
+        # Select best parameters
+        fitness_scores.sort(key=lambda x: x[0]) # lowest error first
+        best_mutant_idx = fitness_scores[0][1]
+        best_w1, best_b1, best_w2, best_b2 = population[best_mutant_idx]
+
+        # Apply updates to the master network
+        net.dense1.weights, net.dense1.biases = best_w1, best_b1
+        net.dense2.weights, net.dense2.biases = best_w2, best_b2
+
+
+# =====================================================================
+# PART 12: HEURISTIC SEARCH AND STACKED NEURAL BLOCK MODULES
 # =====================================================================
 
 class DeepCognitiveBlock:
