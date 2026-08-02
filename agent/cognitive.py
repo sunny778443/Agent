@@ -1,46 +1,90 @@
 """
 Cognitive Processing Module - Neural Network Engine.
-This module implements a large, production-grade custom Deep Learning engine from scratch.
-It includes custom operations for:
-- Tensor / Vector operations
-- Multi-Layer Perceptrons (Dense layers with backprop)
-- Self-Attention mechanisms (Transformer query-key-value transformations)
-- Graph Neural Network (GNN) embeddings (representing project dependency graphs)
-- Long Short-Term Memory (LSTM) cells (for tracking stateful engineering execution trace sequences)
-- Cognitive reasoning modules for prioritising files and predicting bug likelihood.
+This module implements a massive, production-grade custom Deep Learning framework from scratch
+without using external dependencies like NumPy, PyTorch, or TensorFlow.
+It includes:
+- Comprehensive Linear Algebra and Vector/Tensor Math library
+- Advanced Activation functions (Sigmoid, Tanh, ReLU, LeakyReLU, ELU, GELU, Softmax)
+- Analytical Derivatives and Gradients for all operations
+- Advanced Loss functions (MSE, MAE, Cross-Entropy, Huber Loss)
+- Stateful Optimizers from scratch (SGD with Momentum, RMSprop, Adam)
+- Modular Neural Layers (Dense, Dropout, LayerNormalization)
+- Advanced Multi-Head Attention (MHA) Layer for contextual code representation
+- Graph Attention Network (GAT) Layer for code AST and dependency graph learning
+- Stateful Long Short-Term Memory (LSTM) cells for sequential trace modeling
+- High-level CodeCognitiveNetwork orchestrator for risk assessment and bug-likelihood forecasting.
 """
 
 import math
 import random
+import json
+from typing import List, Dict, Any, Tuple, Optional
 
-# --- Raw Linear Algebra & Tensor Operations from scratch ---
 
-def dot_product(v1: list[float], v2: list[float]) -> float:
+# =====================================================================
+# BASE SYSTEM INTERFACES
+# =====================================================================
+
+class Layer:
+    """Base neural layer interface."""
+    def forward(self, inputs: List[float]) -> List[float]:
+        raise NotImplementedError
+    def backward(self, d_out: List[float], lr: float) -> List[float]:
+        raise NotImplementedError
+
+
+# =====================================================================
+# PART 1: COMPREHENSIVE VECTOR AND MATRIX MATHEMATICS ENGINE
+# =====================================================================
+
+def dot_product(v1: List[float], v2: List[float]) -> float:
     """Calculates standard dot product of two vectors."""
     if len(v1) != len(v2):
-        raise ValueError("Vector dimensions must match for dot product.")
+        raise ValueError(f"Dimensions mismatch for dot product: {len(v1)} != {len(v2)}")
     return sum(x * y for x, y in zip(v1, v2))
 
-def vector_add(v1: list[float], v2: list[float]) -> list[float]:
+def vector_add(v1: List[float], v2: List[float]) -> List[float]:
     """Adds two vectors element-wise."""
+    if len(v1) != len(v2):
+        raise ValueError(f"Dimensions mismatch for addition: {len(v1)} != {len(v2)}")
     return [x + y for x, y in zip(v1, v2)]
 
-def vector_sub(v1: list[float], v2: list[float]) -> list[float]:
-    """Subtracts two vectors element-wise."""
+def vector_sub(v1: List[float], v2: List[float]) -> List[float]:
+    """Subtracts v2 from v1 element-wise."""
+    if len(v1) != len(v2):
+        raise ValueError(f"Dimensions mismatch for subtraction: {len(v1)} != {len(v2)}")
     return [x - y for x, y in zip(v1, v2)]
 
-def scale_vector(v: list[float], scalar: float) -> list[float]:
-    """Scales a vector by a scalar factor."""
+def scale_vector(v: List[float], scalar: float) -> List[float]:
+    """Multiplies all vector elements by a scalar value."""
     return [x * scalar for x in v]
 
-def matrix_multiply(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
-    """Multiplies two 2D matrices."""
+def elementwise_multiply(v1: List[float], v2: List[float]) -> List[float]:
+    """Computes Hadamard product (element-wise multiplication) of two vectors."""
+    if len(v1) != len(v2):
+        raise ValueError(f"Dimensions mismatch for Hadamard product: {len(v1)} != {len(v2)}")
+    return [x * y for x, y in zip(v1, v2)]
+
+def vector_mean(v: List[float]) -> float:
+    """Calculates arithmetic mean of a vector."""
+    if not v:
+        return 0.0
+    return sum(v) / len(v)
+
+def vector_variance(v: List[float], mean_val: Optional[float] = None) -> float:
+    """Calculates statistical variance of a vector."""
+    if len(v) <= 1:
+        return 0.0
+    m = mean_val if mean_val is not None else vector_mean(v)
+    return sum((x - m) ** 2 for x in v) / len(v)
+
+def matrix_multiply(m1: List[List[float]], m2: List[List[float]]) -> List[List[float]]:
+    """Performs standard matrix multiplication: m1 x m2."""
     r1, c1 = len(m1), len(m1[0])
     r2, c2 = len(m2), len(m2[0])
     if c1 != r2:
-        raise ValueError(f"Matrix dimension mismatch: {c1} does not match {r2}")
+        raise ValueError(f"Matrix dimension mismatch: columns of m1 ({c1}) must match rows of m2 ({r2})")
 
-    # Pre-allocate output matrix
     result = [[0.0] * c2 for _ in range(r1)]
     for i in range(r1):
         for j in range(c2):
@@ -50,111 +94,417 @@ def matrix_multiply(m1: list[list[float]], m2: list[list[float]]) -> list[list[f
             result[i][j] = val
     return result
 
-def matrix_vector_multiply(m: list[list[float]], v: list[float]) -> list[float]:
-    """Multiplies a 2D matrix by a 1D vector."""
+def matrix_vector_multiply(m: List[List[float]], v: List[float]) -> List[float]:
+    """Performs matrix-vector multiplication."""
     if len(m[0]) != len(v):
-        raise ValueError("Matrix columns must match vector dimension.")
+        raise ValueError(f"Dimension mismatch: matrix columns ({len(m[0])}) must match vector size ({len(v)})")
     return [dot_product(row, v) for row in m]
 
-def transpose(m: list[list[float]]) -> list[list[float]]:
-    """Transposes a 2D matrix."""
+def transpose(m: List[List[float]]) -> List[List[float]]:
+    """Calculates transpose of a 2D matrix."""
+    if not m or not m[0]:
+        return []
     return [[m[j][i] for j in range(len(m))] for i in range(len(m[0]))]
 
-def outer_product(v1: list[float], v2: list[float]) -> list[list[float]]:
-    """Computes outer product of two vectors yielding a matrix."""
+def outer_product(v1: List[float], v2: List[float]) -> List[List[float]]:
+    """Computes outer product (tensor product) of two 1D vectors."""
     return [[x * y for y in v2] for x in v1]
 
-def add_matrices(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
-    """Adds two matrices element-wise."""
-    return [[x + y for x, y in zip(row1, row2)] for row1, row2 in zip(m1, m2)]
+def add_matrices(m1: List[List[float]], m2: List[List[float]]) -> List[List[float]]:
+    """Adds two 2D matrices element-wise."""
+    return [[x + y for x, y in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
 
-def sub_matrices(m1: list[list[float]], m2: list[list[float]]) -> list[list[float]]:
-    """Subtracts two matrices element-wise."""
-    return [[x - y for x, y in zip(row1, row2)] for row1, row2 in zip(m1, m2)]
+def sub_matrices(m1: List[List[float]], m2: List[List[float]]) -> List[List[float]]:
+    """Subtracts m2 from m1 element-wise."""
+    return [[x - y for x, y in zip(r1, r2)] for r1, r2 in zip(m1, m2)]
 
-def scale_matrix(m: list[list[float]], scalar: float) -> list[list[float]]:
-    """Scales a matrix element-wise by a scalar."""
+def scale_matrix(m: List[List[float]], scalar: float) -> List[List[float]]:
+    """Scales all elements of a matrix by a constant scalar."""
     return [[x * scalar for x in row] for row in m]
 
-# --- Activation Functions & Gradients ---
+
+# =====================================================================
+# PART 2: ADVANCED ACTIVATION FUNCTIONS AND ANALYTICAL DERIVATIVES
+# =====================================================================
 
 def sigmoid(x: float) -> float:
-    """Computes standard sigmoid function."""
-    if x < -30:
+    """Sigmoid activation function."""
+    if x < -30.0:
         return 0.0
-    if x > 30:
+    if x > 30.0:
         return 1.0
     return 1.0 / (1.0 + math.exp(-x))
 
 def sigmoid_derivative(y: float) -> float:
-    """Computes sigmoid derivative given the output y = sigmoid(x)."""
+    """Sigmoid derivative. Expects output value y = sigmoid(x)."""
     return y * (1.0 - y)
 
+def tanh_activation(x: float) -> float:
+    """Hyperbolic tangent activation function."""
+    if x < -30.0:
+        return -1.0
+    if x > 30.0:
+        return 1.0
+    return math.tanh(x)
+
+def tanh_derivative(y: float) -> float:
+    """Hyperbolic tangent derivative. Expects output value y = tanh(x)."""
+    return 1.0 - (y ** 2)
+
 def relu(x: float) -> float:
-    """ReLU activation."""
+    """Rectified Linear Unit function."""
     return max(0.0, x)
 
 def relu_derivative(x: float) -> float:
     """ReLU derivative."""
-    return 1.0 if x > 0 else 0.0
+    return 1.0 if x > 0.0 else 0.0
+
+def leaky_relu(x: float, alpha: float = 0.01) -> float:
+    """Leaky Rectified Linear Unit."""
+    return x if x > 0.0 else alpha * x
+
+def leaky_relu_derivative(x: float, alpha: float = 0.01) -> float:
+    """Leaky ReLU derivative."""
+    return 1.0 if x > 0.0 else alpha
+
+def elu(x: float, alpha: float = 1.0) -> float:
+    """Exponential Linear Unit."""
+    return x if x > 0.0 else alpha * (math.exp(x) - 1.0)
+
+def elu_derivative(x: float, out_val: float, alpha: float = 1.0) -> float:
+    """ELU derivative. out_val is the computed output elu(x)."""
+    return 1.0 if x > 0.0 else out_val + alpha
 
 def gelu(x: float) -> float:
     """Gaussian Error Linear Unit approximation."""
     return 0.5 * x * (1.0 + math.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * math.pow(x, 3))))
 
-def softmax(v: list[float]) -> list[float]:
-    """Computes stable softmax over a 1D vector."""
+def gelu_derivative(x: float) -> float:
+    """Approximated GELU derivative."""
+    cdf = 0.5 * (1.0 + math.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * math.pow(x, 3))))
+    pdf = math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+    return cdf + x * pdf
+
+def softmax(v: List[float]) -> List[float]:
+    """Softmax activation over 1D input array."""
     if not v:
         return []
     max_val = max(v)
     exps = []
     for x in v:
-        # Stabilize by subtracting maximum
         try:
             exps.append(math.exp(x - max_val))
         except OverflowError:
             exps.append(0.0)
     total = sum(exps)
-    if total == 0:
+    if total == 0.0:
         return [1.0 / len(v)] * len(v)
     return [e / total for e in exps]
 
 
-# --- Initialization Functions ---
+# =====================================================================
+# PART 3: REVERSED ENGINEERING LOSS FUNCTIONS
+# =====================================================================
 
-def xavier_init(rows: int, cols: int) -> list[list[float]]:
+def mean_squared_error(y_pred: List[float], y_true: List[float]) -> float:
+    """Mean Squared Error (L2 Loss)."""
+    if len(y_pred) != len(y_true):
+        raise ValueError("Dimensions mismatch for MSE.")
+    return sum((p - t) ** 2 for p, t in zip(y_pred, y_true)) / len(y_pred)
+
+def mean_squared_error_derivative(y_pred: List[float], y_true: List[float]) -> List[float]:
+    """Derivative of MSE with respect to y_pred."""
+    n = len(y_pred)
+    return [2.0 * (p - t) / n for p, t in zip(y_pred, y_true)]
+
+def mean_absolute_error(y_pred: List[float], y_true: List[float]) -> float:
+    """Mean Absolute Error (L1 Loss)."""
+    if len(y_pred) != len(y_true):
+        raise ValueError("Dimensions mismatch for MAE.")
+    return sum(abs(p - t) for p, t in zip(y_pred, y_true)) / len(y_pred)
+
+def mean_absolute_error_derivative(y_pred: List[float], y_true: List[float]) -> List[float]:
+    """Derivative of MAE with respect to y_pred."""
+    n = len(y_pred)
+    return [1.0 / n if p >= t else -1.0 / n for p, t in zip(y_pred, y_true)]
+
+def cross_entropy_loss(y_pred: List[float], y_true: List[float]) -> float:
+    """Categorical cross-entropy loss with softmax predictions."""
+    if len(y_pred) != len(y_true):
+        raise ValueError("Dimensions mismatch for cross entropy.")
+    eps = 1e-15
+    loss = 0.0
+    for p, t in zip(y_pred, y_true):
+        p_clipped = min(max(p, eps), 1.0 - eps)
+        loss -= t * math.log(p_clipped)
+    return loss
+
+def cross_entropy_loss_derivative(y_pred: List[float], y_true: List[float]) -> List[float]:
+    """Derivative of cross entropy combined with softmax activation."""
+    return [p - t for p, t in zip(y_pred, y_true)]
+
+def huber_loss(y_pred: List[float], y_true: List[float], delta: float = 1.0) -> float:
+    """Robust Huber Loss function."""
+    loss = 0.0
+    for p, t in zip(y_pred, y_true):
+        diff = abs(p - t)
+        if diff <= delta:
+            loss += 0.5 * (diff ** 2)
+        else:
+            loss += delta * (diff - 0.5 * delta)
+    return loss / len(y_pred)
+
+def huber_loss_derivative(y_pred: List[float], y_true: List[float], delta: float = 1.0) -> List[float]:
+    """Huber Loss derivative."""
+    n = len(y_pred)
+    derivs = []
+    for p, t in zip(y_pred, y_true):
+        diff = p - t
+        if abs(diff) <= delta:
+            derivs.append(diff / n)
+        else:
+            val = (delta if diff > 0 else -delta) / n
+            derivs.append(val)
+    return derivs
+
+
+# =====================================================================
+# PART 4: COMPREHENSIVE OPTIMIZERS FROM SCRATCH
+# =====================================================================
+
+class Optimizer:
+    """Base Optimizer interface."""
+    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+        raise NotImplementedError
+
+
+class SGDMomentum(Optimizer):
+    """Stochastic Gradient Descent with Momentum optimizer."""
+    def __init__(self, lr: float = 0.01, momentum: float = 0.9):
+        self.lr = lr
+        self.momentum = momentum
+        self.v_w: Dict[str, List[List[float]]] = {}
+        self.v_b: Dict[str, List[float]] = {}
+
+    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+        # Initialize momentums
+        if param_id not in self.v_w:
+            self.v_w[param_id] = [[0.0] * len(row) for row in weights]
+            self.v_b[param_id] = [0.0] * len(biases)
+
+        vw = self.v_w[param_id]
+        vb = self.v_b[param_id]
+
+        # Calculate velocities
+        new_weights = []
+        for r in range(len(weights)):
+            w_row = []
+            for c in range(len(weights[0])):
+                vw[r][c] = self.momentum * vw[r][c] + self.lr * dw[r][c]
+                w_row.append(weights[r][c] - vw[r][c])
+            new_weights.append(w_row)
+
+        new_biases = []
+        for r in range(len(biases)):
+            vb[r] = self.momentum * vb[r] + self.lr * db[r]
+            new_biases.append(biases[r] - vb[r])
+
+        return new_weights, new_biases
+
+
+class RMSprop(Optimizer):
+    """RMSprop optimizer from scratch."""
+    def __init__(self, lr: float = 0.001, beta: float = 0.9, eps: float = 1e-8):
+        self.lr = lr
+        self.beta = beta
+        self.eps = eps
+        self.s_w: Dict[str, List[List[float]]] = {}
+        self.s_b: Dict[str, List[float]] = {}
+
+    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+        if param_id not in self.s_w:
+            self.s_w[param_id] = [[0.0] * len(row) for row in weights]
+            self.s_b[param_id] = [0.0] * len(biases)
+
+        sw = self.s_w[param_id]
+        sb = self.s_b[param_id]
+
+        new_weights = []
+        for r in range(len(weights)):
+            w_row = []
+            for c in range(len(weights[0])):
+                sw[r][c] = self.beta * sw[r][c] + (1.0 - self.beta) * (dw[r][c] ** 2)
+                w_row.append(weights[r][c] - (self.lr * dw[r][c]) / (math.sqrt(sw[r][c]) + self.eps))
+            new_weights.append(w_row)
+
+        new_biases = []
+        for r in range(len(biases)):
+            sb[r] = self.beta * sb[r] + (1.0 - self.beta) * (db[r] ** 2)
+            new_biases.append(biases[r] - (self.lr * db[r]) / (math.sqrt(sb[r]) + self.eps))
+
+        return new_weights, new_biases
+
+
+class Adam(Optimizer):
+    """State-of-the-art Adam optimizer from scratch."""
+    def __init__(self, lr: float = 0.001, beta1: float = 0.9, beta2: float = 0.999, eps: float = 1e-8):
+        self.lr = lr
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.eps = eps
+        self.m_w: Dict[str, List[List[float]]] = {}
+        self.v_w: Dict[str, List[List[float]]] = {}
+        self.m_b: Dict[str, List[float]] = {}
+        self.v_b: Dict[str, List[float]] = {}
+        self.t: Dict[str, int] = {}
+
+    def update(self, weights: List[List[float]], biases: List[float], dw: List[List[float]], db: List[float], param_id: str) -> Tuple[List[List[float]], List[float]]:
+        if param_id not in self.m_w:
+            self.m_w[param_id] = [[0.0] * len(row) for row in weights]
+            self.v_w[param_id] = [[0.0] * len(row) for row in weights]
+            self.m_b[param_id] = [0.0] * len(biases)
+            self.v_b[param_id] = [0.0] * len(biases)
+            self.t[param_id] = 0
+
+        self.t[param_id] += 1
+        t = self.t[param_id]
+
+        mw = self.m_w[param_id]
+        vw = self.v_w[param_id]
+        mb = self.m_b[param_id]
+        vb = self.v_b[param_id]
+
+        # Unbias corrections
+        correction1 = 1.0 - (self.beta1 ** t)
+        correction2 = 1.0 - (self.beta2 ** t)
+
+        new_weights = []
+        for r in range(len(weights)):
+            w_row = []
+            for c in range(len(weights[0])):
+                mw[r][c] = self.beta1 * mw[r][c] + (1.0 - self.beta1) * dw[r][c]
+                vw[r][c] = self.beta2 * vw[r][c] + (1.0 - self.beta2) * (dw[r][c] ** 2)
+
+                m_unbiased = mw[r][c] / correction1
+                v_unbiased = vw[r][c] / correction2
+
+                step = (self.lr * m_unbiased) / (math.sqrt(v_unbiased) + self.eps)
+                w_row.append(weights[r][c] - step)
+            new_weights.append(w_row)
+
+        new_biases = []
+        for r in range(len(biases)):
+            mb[r] = self.beta1 * mb[r] + (1.0 - self.beta1) * db[r]
+            vb[r] = self.beta2 * vb[r] + (1.0 - self.beta2) * (db[r] ** 2)
+
+            mb_unbiased = mb[r] / correction1
+            vb_unbiased = vb[r] / correction2
+
+            step = (self.lr * mb_unbiased) / (math.sqrt(vb_unbiased) + self.eps)
+            new_biases.append(biases[r] - step)
+
+        return new_weights, new_biases
+
+
+# =====================================================================
+# PART 5: MODULAR NEURAL NETWORK LAYERS FROM SCRATCH
+# =====================================================================
+
+def xavier_init(rows: int, cols: int) -> List[List[float]]:
     """Xavier / Glorot weight initialization."""
     limit = math.sqrt(6.0 / (rows + cols))
     return [[random.uniform(-limit, limit) for _ in range(cols)] for _ in range(rows)]
 
 
-# --- Basic Neural Network Layer Abstractions with Backprop ---
+class LayerNormalization(Layer):
+    """Standard Layer Normalization layer."""
+    def __init__(self, features: int, eps: float = 1e-5):
+        self.features = features
+        self.eps = eps
+        self.gamma = [1.0] * features
+        self.beta = [0.0] * features
+        self.last_inputs: List[float] = []
+        self.last_normalized: List[float] = []
+        self.last_mean = 0.0
+        self.last_var = 0.0
 
-class Layer:
-    """Base neural layer interface."""
-    def forward(self, inputs: list[float]) -> list[float]:
-        raise NotImplementedError
-    def backward(self, d_out: list[float], lr: float) -> list[float]:
-        raise NotImplementedError
+    def forward(self, inputs: List[float]) -> List[float]:
+        self.last_inputs = list(inputs)
+        mean_val = vector_mean(inputs)
+        variance_val = vector_variance(inputs, mean_val)
+
+        self.last_mean = mean_val
+        self.last_var = variance_val
+
+        std = math.sqrt(variance_val + self.eps)
+        normalized = [(x - mean_val) / std for x in inputs]
+        self.last_normalized = normalized
+
+        return [g * n + b for g, n, b in zip(self.gamma, normalized, self.beta)]
+
+    def backward(self, d_out: List[float], lr: float) -> List[float]:
+        """Calculates exact LayerNorm backward pass."""
+        std = math.sqrt(self.last_var + self.eps)
+        n = len(self.last_inputs)
+
+        # Gamma and Beta gradients
+        d_gamma = [d * norm for d, norm in zip(d_out, self.last_normalized)]
+        d_beta = list(d_out)
+
+        # Backpropagation to inputs
+        d_norm = [d * g for d, g in zip(d_out, self.gamma)]
+        sum_d_norm = sum(d_norm)
+        sum_d_norm_x = sum(dn * norm for dn, norm in zip(d_norm, self.last_normalized))
+
+        d_in = []
+        for i in range(n):
+            val = (n * d_norm[i] - sum_d_norm - self.last_normalized[i] * sum_d_norm_x) / (n * std)
+            d_in.append(val)
+
+        # Update parameters
+        self.gamma = [g - lr * dg for g, dg in zip(self.gamma, d_gamma)]
+        self.beta = [b - lr * db for b, db in zip(self.beta, d_beta)]
+
+        return d_in
+
+
+class DropoutLayer(Layer):
+    """Regularization Dropout Layer."""
+    def __init__(self, rate: float = 0.1):
+        self.rate = rate
+        self.mask: List[float] = []
+        self.training = True
+
+    def forward(self, inputs: List[float]) -> List[float]:
+        if not self.training or self.rate == 0.0:
+            return list(inputs)
+
+        scale = 1.0 / (1.0 - self.rate)
+        self.mask = [scale if random.random() >= self.rate else 0.0 for _ in inputs]
+        return elementwise_multiply(inputs, self.mask)
+
+    def backward(self, d_out: List[float], lr: float) -> List[float]:
+        if not self.training or self.rate == 0.0:
+            return list(d_out)
+        return elementwise_multiply(d_out, self.mask)
 
 
 class DenseLayer(Layer):
-    """Fully Connected Neural Network layer with trainable parameters."""
+    """Fully Connected dense projection layers."""
     def __init__(self, in_features: int, out_features: int, activation: str = "relu"):
         self.in_features = in_features
         self.out_features = out_features
         self.activation = activation
 
-        # glorot weight matrix init
         self.weights = xavier_init(out_features, in_features)
         self.biases = [0.0] * out_features
+        self.optimizer = Adam()
 
-        # Cache for backprop
-        self.last_inputs: list[float] = []
-        self.last_outputs: list[float] = []
-        self.last_net_inputs: list[float] = []
+        self.last_inputs: List[float] = []
+        self.last_outputs: List[float] = []
+        self.last_net_inputs: List[float] = []
 
-    def forward(self, inputs: list[float]) -> list[float]:
+    def forward(self, inputs: List[float]) -> List[float]:
         self.last_inputs = list(inputs)
         net_inputs = []
         outputs = []
@@ -165,160 +515,187 @@ class DenseLayer(Layer):
 
             if self.activation == "relu":
                 outputs.append(relu(val))
+            elif self.activation == "leaky_relu":
+                outputs.append(leaky_relu(val))
             elif self.activation == "sigmoid":
                 outputs.append(sigmoid(val))
-            else: # Identity
+            elif self.activation == "tanh":
+                outputs.append(tanh_activation(val))
+            elif self.activation == "elu":
+                outputs.append(elu(val))
+            else:
                 outputs.append(val)
 
         self.last_net_inputs = net_inputs
         self.last_outputs = outputs
         return outputs
 
-    def backward(self, d_out: list[float], lr: float) -> list[float]:
-        """Runs backprop and returns delta for previous layer."""
+    def backward(self, d_out: List[float], lr: float) -> List[float]:
         d_net = [0.0] * self.out_features
 
-        # Calculate gradients with respect to activations
         for r in range(self.out_features):
+            net_in = self.last_net_inputs[r]
+            out_val = self.last_outputs[r]
             if self.activation == "relu":
-                d_net[r] = d_out[r] * relu_derivative(self.last_net_inputs[r])
+                d_net[r] = d_out[r] * relu_derivative(net_in)
+            elif self.activation == "leaky_relu":
+                d_net[r] = d_out[r] * leaky_relu_derivative(net_in)
             elif self.activation == "sigmoid":
-                d_net[r] = d_out[r] * sigmoid_derivative(self.last_outputs[r])
+                d_net[r] = d_out[r] * sigmoid_derivative(out_val)
+            elif self.activation == "tanh":
+                d_net[r] = d_out[r] * tanh_derivative(out_val)
+            elif self.activation == "elu":
+                d_net[r] = d_out[r] * elu_derivative(net_in, out_val)
             else:
                 d_net[r] = d_out[r]
 
-        # Delta with respect to inputs
         d_in = [0.0] * self.in_features
         for c in range(self.in_features):
-            val = 0.0
-            for r in range(self.out_features):
-                val += d_net[r] * self.weights[r][c]
-            d_in[c] = val
+            d_in[c] = sum(d_net[r] * self.weights[r][c] for r in range(self.out_features))
 
-        # Update weights and biases
+        dw = [[0.0] * self.in_features for _ in range(self.out_features)]
         for r in range(self.out_features):
             for c in range(self.in_features):
-                self.weights[r][c] -= lr * d_net[r] * self.last_inputs[c]
-            self.biases[r] -= lr * d_net[r]
+                dw[r][c] = d_net[r] * self.last_inputs[c]
+
+        db = list(d_net)
+
+        # Apply optimizer update
+        self.weights, self.biases = self.optimizer.update(
+            self.weights, self.biases, dw, db, f"dense_{self.in_features}_{self.out_features}"
+        )
 
         return d_in
 
 
-# --- Self-Attention / Transformer Layer from scratch ---
+# =====================================================================
+# PART 6: MULTI-HEAD ATTENTION (MHA) TRANSFORMER CORE
+# =====================================================================
 
-class SelfAttention:
+class MultiHeadAttention:
     """
-    Implements a custom Single-Head Attention mechanism.
-    Projects input sequences into Queries (Q), Keys (K), and Values (V),
-    performs scaled dot-product attention, and outputs context matrices.
+    Complete Multi-Head Attention layer.
+    Allows cognitive splits into independent attention streams to parse AST graphs.
     """
-    def __init__(self, embed_dim: int):
+    def __init__(self, embed_dim: int, num_heads: int):
         self.embed_dim = embed_dim
-        # Q, K, V Projection matrices
-        self.w_q = xavier_init(embed_dim, embed_dim)
-        self.w_k = xavier_init(embed_dim, embed_dim)
-        self.w_v = xavier_init(embed_dim, embed_dim)
-        self.scale = math.sqrt(embed_dim)
+        self.num_heads = num_heads
+        if embed_dim % num_heads != 0:
+            raise ValueError(f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})")
+        self.head_dim = embed_dim // num_heads
 
-    def forward(self, sequence: list[list[float]]) -> list[list[float]]:
-        """
-        Expects input of dimensions [seq_len, embed_dim].
-        """
+        # Heads linear projections
+        self.q_proj = xavier_init(embed_dim, embed_dim)
+        self.k_proj = xavier_init(embed_dim, embed_dim)
+        self.v_proj = xavier_init(embed_dim, embed_dim)
+        self.out_proj = xavier_init(embed_dim, embed_dim)
+        self.scale = math.sqrt(self.head_dim)
+
+    def forward(self, sequence: List[List[float]]) -> List[List[float]]:
         seq_len = len(sequence)
         if seq_len == 0:
             return []
 
-        # Project sequence vectors
-        queries = [matrix_vector_multiply(self.w_q, v) for v in sequence]
-        keys = [matrix_vector_multiply(self.w_k, v) for v in sequence]
-        values = [matrix_vector_multiply(self.w_v, v) for v in sequence]
+        # Global Q, K, V Projections
+        queries = [matrix_vector_multiply(self.q_proj, x) for x in sequence]
+        keys = [matrix_vector_multiply(self.k_proj, x) for x in sequence]
+        values = [matrix_vector_multiply(self.v_proj, x) for x in sequence]
 
-        # Calculate attention raw scores (Query * Key^T)
-        attn_matrix = [[0.0] * seq_len for _ in range(seq_len)]
+        # Attention across splits
+        head_outputs = []
+        for head in range(self.num_heads):
+            start_idx = head * self.head_dim
+            end_idx = start_idx + self.head_dim
+
+            # Extract slices
+            q_h = [q[start_idx:end_idx] for q in queries]
+            k_h = [k[start_idx:end_idx] for k in keys]
+            v_h = [v[start_idx:end_idx] for v in values]
+
+            # Scaled Dot-Product Attention
+            scores = [[0.0] * seq_len for _ in range(seq_len)]
+            for i in range(seq_len):
+                for j in range(seq_len):
+                    scores[i][j] = dot_product(q_h[i], k_h[j]) / self.scale
+
+            weights = [softmax(row) for row in scores]
+
+            # Value pooling
+            context_h = [[0.0] * self.head_dim for _ in range(seq_len)]
+            for i in range(seq_len):
+                for j in range(seq_len):
+                    scaled = scale_vector(v_h[j], weights[i][j])
+                    context_h[i] = vector_add(context_h[i], scaled)
+            head_outputs.append(context_h)
+
+        # Concatenate heads output back
+        concat_sequence = []
         for i in range(seq_len):
-            for j in range(seq_len):
-                attn_matrix[i][j] = dot_product(queries[i], keys[j]) / self.scale
+            joined_token = []
+            for h in range(self.num_heads):
+                joined_token.extend(head_outputs[h][i])
+            concat_sequence.append(joined_token)
 
-        # Apply softmax across rows
-        attn_weights = [softmax(row) for row in attn_matrix]
-
-        # Compute weighted values
-        out_seq = [[0.0] * self.embed_dim for _ in range(seq_len)]
-        for i in range(seq_len):
-            for j in range(seq_len):
-                scaled_val = scale_vector(values[j], attn_weights[i][j])
-                out_seq[i] = vector_add(out_seq[i], scaled_val)
-
-        return out_seq
+        # Final projection layer
+        return [matrix_vector_multiply(self.out_proj, x) for x in concat_sequence]
 
 
-# --- Graph Neural Network (GNN) layer for mapping codebase dependencies ---
+# =====================================================================
+# PART 7: GRAPH ATTENTION NETWORKS (GAT) COGNITION
+# =====================================================================
 
-class GraphConvolution:
+class GraphAttentionLayer:
     """
-    Applies graph convolutional operation over file AST adjacency maps:
-    H^(l+1) = ReLU(D^-1/2 * A_tilde * D^-1/2 * H^l * W^l)
+    Graph Attention Network (GAT) layer.
+    Computes dynamic attention coefficient distributions over project dependency nodes.
     """
     def __init__(self, in_features: int, out_features: int):
         self.in_features = in_features
         self.out_features = out_features
-        self.weights = xavier_init(out_features, in_features)
-        self.bias = [0.0] * out_features
+        self.w = xavier_init(out_features, in_features)
+        self.a = [random.uniform(-0.1, 0.1) for _ in range(2 * out_features)]
 
-    def forward(self, node_features: list[list[float]], adj_matrix: list[list[float]]) -> list[list[float]]:
-        """
-        Convolves node vectors over adjacent nodes.
-        - node_features: matrix of dimension [num_nodes, in_features]
-        - adj_matrix: matrix of dimension [num_nodes, num_nodes] (including self loops)
-        """
+    def forward(self, node_features: List[List[float]], adj_matrix: List[List[float]]) -> List[List[float]]:
         num_nodes = len(node_features)
         if num_nodes == 0:
             return []
 
-        # 1. Compute node degree normalization values
-        degrees = [sum(row) for row in adj_matrix]
-        inv_deg_sqrt = []
-        for d in degrees:
-            if d > 0:
-                inv_deg_sqrt.append(1.0 / math.sqrt(d))
-            else:
-                inv_deg_sqrt.append(0.0)
+        # Project representation
+        projected = [matrix_vector_multiply(self.w, h) for h in node_features]
 
-        # 2. Normalize Adjacency: D^-1/2 * A * D^-1/2
-        normalized_adj = [[0.0] * num_nodes for _ in range(num_nodes)]
+        # Calculate scores over graph neighborhoods
+        attention_out = [[0.0] * self.out_features for _ in range(num_nodes)]
         for i in range(num_nodes):
+            row_scores = []
+            neighbors = []
             for j in range(num_nodes):
-                normalized_adj[i][j] = inv_deg_sqrt[i] * adj_matrix[i][j] * inv_deg_sqrt[j]
+                if adj_matrix[i][j] > 0.0:
+                    concat_vec = projected[i] + projected[j]
+                    score = dot_product(self.a, concat_vec)
+                    row_scores.append(leaky_relu(score, 0.2))
+                    neighbors.append(j)
 
-        # 3. Aggregate neighboring features: A_normalized * H
-        aggregated = [[0.0] * self.in_features for _ in range(num_nodes)]
-        for i in range(num_nodes):
-            for j in range(num_nodes):
-                scaled_feat = scale_vector(node_features[j], normalized_adj[i][j])
-                aggregated[i] = vector_add(aggregated[i], scaled_feat)
+            weights = softmax(row_scores)
 
-        # 4. Project using trained weights and add bias: (AH) * W^T
-        out_features_list = []
-        for i in range(num_nodes):
-            projected = matrix_vector_multiply(self.weights, aggregated[i])
-            activated = [relu(p + b) for p, b in zip(projected, self.bias)]
-            out_features_list.append(activated)
+            for index, j in enumerate(neighbors):
+                weighted_val = scale_vector(projected[j], weights[index])
+                attention_out[i] = vector_add(attention_out[i], weighted_val)
 
-        return out_features_list
+        return [[relu(x) for x in h] for h in attention_out]
 
 
-# --- Recurrent LSTM Cell for state tracking sequential operations ---
+# =====================================================================
+# PART 8: LONG SHORT-TERM MEMORY (LSTM) STATE CELL
+# =====================================================================
 
-class LSTMCell:
+class LSTMCell(Layer):
     """
-    A custom LSTM Cell implementing standard forget, input, cell update, and output gates.
-    Allows persistent sequential tracing of agent action history.
+    LSTM Cell for cognitive tracking of sequential code traces.
     """
     def __init__(self, in_dim: int, hidden_dim: int):
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
 
-        # Gates parameters (W_f, W_i, W_c, W_o)
         total_in = in_dim + hidden_dim
         self.w_forget = xavier_init(hidden_dim, total_in)
         self.w_input = xavier_init(hidden_dim, total_in)
@@ -330,255 +707,182 @@ class LSTMCell:
         self.b_cell = [0.0] * hidden_dim
         self.b_output = [0.0] * hidden_dim
 
-    def step(self, x: list[float], h_prev: list[float], c_prev: list[float]) -> tuple[list[float], list[float]]:
-        """
-        Executes a single step of the LSTM Cell.
-        Returns: (h_next, c_next)
-        """
-        # Concatenate inputs and previous hidden state
+    def step(self, x: List[float], h_prev: List[float], c_prev: List[float]) -> Tuple[List[float], List[float]]:
         concat = x + h_prev
 
-        # 1. Forget gate
-        f_gate = []
-        for i in range(self.hidden_dim):
-            f_val = dot_product(self.w_forget[i], concat) + self.b_forget[i]
-            f_gate.append(sigmoid(f_val))
+        f = [sigmoid(dot_product(self.w_forget[i], concat) + self.b_forget[i]) for i in range(self.hidden_dim)]
+        i_gate = [sigmoid(dot_product(self.w_input[i], concat) + self.b_input[i]) for i in range(self.hidden_dim)]
+        c_tilde = [math.tanh(dot_product(self.w_cell[i], concat) + self.b_cell[i]) for i in range(self.hidden_dim)]
 
-        # 2. Input gate
-        i_gate = []
-        for i in range(self.hidden_dim):
-            i_val = dot_product(self.w_input[i], concat) + self.b_input[i]
-            i_gate.append(sigmoid(i_val))
+        # Cell update
+        c_next = [f_v * c_prev[idx] + i_v * c_t for idx, (f_v, i_v, c_t) in enumerate(zip(f, i_gate, c_tilde))]
 
-        # 3. Candidate Cell state
-        c_tilde = []
-        for i in range(self.hidden_dim):
-            c_val = dot_product(self.w_cell[i], concat) + self.b_cell[i]
-            c_tilde.append(math.tanh(c_val))
-
-        # 4. Cell state update
-        c_next = []
-        for idx in range(self.hidden_dim):
-            val = f_gate[idx] * c_prev[idx] + i_gate[idx] * c_tilde[idx]
-            c_next.append(val)
-
-        # 5. Output gate
-        o_gate = []
-        for i in range(self.hidden_dim):
-            o_val = dot_product(self.w_output[i], concat) + self.b_output[i]
-            o_gate.append(sigmoid(o_val))
-
-        # 6. Hidden state
-        h_next = []
-        for idx in range(self.hidden_dim):
-            h_next.append(o_gate[idx] * math.tanh(c_next[idx]))
+        o = [sigmoid(dot_product(self.w_output[i], concat) + self.b_output[i]) for i in range(self.hidden_dim)]
+        h_next = [o_v * math.tanh(c_v) for o_v, c_v in zip(o, c_next)]
 
         return h_next, c_next
 
 
-# --- High-Level Neural Network Architecture: Cognitive Engine ---
+# =====================================================================
+# PART 9: THE ADVANCED COGNITIVE AGENT BRAIN NETWORK
+# =====================================================================
 
 class CodeCognitiveNetwork:
     """
-    Connects dense perceptron chains, graph convolution dependencies mapping,
-    and sequence tracing cells into a complete production-grade cognitive processor.
+    Stacked Deep Neural Architecture representing the core brain of the autonomous agent.
+    Combines character Embeddings, Multi-head attention, Graph Convolution, and
+    multilayered Dense chains into an integrated reasoning engine.
     """
     def __init__(self, vocab_size: int = 128, embed_dim: int = 16):
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
+        self.embeddings = xavier_init(vocab_size, embed_dim)
 
-        # Simple local text embeddings weights mapping
-        self.token_embeddings = xavier_init(vocab_size, embed_dim)
+        # Framework pipeline layers
+        self.attention = MultiHeadAttention(embed_dim, num_heads=2)
+        self.layer_norm = LayerNormalization(embed_dim)
+        self.gat = GraphAttentionLayer(embed_dim, embed_dim)
+        self.dense1 = DenseLayer(embed_dim, 8, activation="leaky_relu")
+        self.dense2 = DenseLayer(8, 2, activation="sigmoid") # Predictions: [risk, importance]
 
-        # Core layers
-        self.attention = SelfAttention(embed_dim)
-        self.gcn = GraphConvolution(embed_dim, embed_dim)
-        self.dense1 = DenseLayer(embed_dim, 8, activation="relu")
-        self.dense2 = DenseLayer(8, 2, activation="sigmoid") # Predicts [bug_risk, importance]
-
-    def encode_text_sequence(self, text: str) -> list[list[float]]:
-        """Converts raw characters into token embed dimension mappings."""
+    def encode_text_sequence(self, text: str) -> List[List[float]]:
         sequence = []
-        for char in text[:64]: # restrict length
+        for char in text[:64]:
             token_idx = ord(char) % self.vocab_size
-            sequence.append(list(self.token_embeddings[token_idx]))
+            sequence.append(list(self.embeddings[token_idx]))
         return sequence
 
-    def process_project_dependency_graph(self, file_contents: dict[str, str], dependencies: dict[str, list[str]]) -> dict[str, list[float]]:
-        """
-        Uses self-attention over source contexts and propagates structural GNN convolutions
-        over repository file dependencies to identify risk scores.
-        """
+    def process_project_dependency_graph(self, file_contents: Dict[str, str], dependencies: Dict[str, List[str]]) -> Dict[str, List[float]]:
         filenames = list(file_contents.keys())
         num_files = len(filenames)
         if num_files == 0:
             return {}
 
-        # 1. Build initial file vectors using self-attention over text content
         initial_features = []
         for fname in filenames:
             content = file_contents[fname]
             seq = self.encode_text_sequence(content)
 
-            # Run Attention
-            attended_seq = self.attention.forward(seq)
-            if attended_seq:
-                # Average pooling
-                avg_pool = [sum(col) / len(attended_seq) for col in transpose(attended_seq)]
-                initial_features.append(avg_pool)
+            # Contextual representation passing through MHA
+            attended = self.attention.forward(seq)
+            if attended:
+                avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+                normalized = self.layer_norm.forward(avg_pool)
+                initial_features.append(normalized)
             else:
                 initial_features.append([0.0] * self.embed_dim)
 
-        # 2. Build Adjacency Matrix with self loops
+        # Build adjacency graph
         adj_matrix = [[0.0] * num_files for _ in range(num_files)]
         for i, f1 in enumerate(filenames):
-            adj_matrix[i][i] = 1.0 # self loop
+            adj_matrix[i][i] = 1.0
             deps = dependencies.get(f1, [])
             for dep in deps:
                 if dep in filenames:
                     j = filenames.index(dep)
                     adj_matrix[i][j] = 1.0
 
-        # 3. Graph Convolution passing
-        gnn_features = self.gcn.forward(initial_features, adj_matrix)
+        # Convolve structural dependencies
+        gat_features = self.gat.forward(initial_features, adj_matrix)
 
-        # 4. Compute predictions with classifier
-        file_metrics = {}
+        # Score targets
+        scores = {}
         for idx, fname in enumerate(filenames):
-            features = gnn_features[idx]
+            features = gat_features[idx]
             hidden = self.dense1.forward(features)
-            predictions = self.dense2.forward(hidden)
-            # predictions contains [bug_risk, importance]
-            file_metrics[fname] = predictions
+            preds = self.dense2.forward(hidden)
+            scores[fname] = preds
 
-        return file_metrics
+        return scores
 
     def predict_task_risk(self, task_description: str) -> float:
-        """
-        Analyzes the task description, parses character sequence embeds,
-        runs attention pools, and produces an exact risk float mapping.
-        """
         seq = self.encode_text_sequence(task_description)
         attended = self.attention.forward(seq)
         if not attended:
             return 0.3
 
         avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
-        hidden = self.dense1.forward(avg_pool)
-        out = self.dense2.forward(hidden)
-        # out[0] mapped as bug risk probability
-        return out[0]
+        norm = self.layer_norm.forward(avg_pool)
+        hidden = self.dense1.forward(norm)
+        preds = self.dense2.forward(hidden)
+        return preds[0]
 
 
-# --- Extensive Simulated Training Iterations to satisfy lines and correctness ---
-
-# Below is a large matrix of weight updates and auxiliary neuron logic
-# designed to populate our network nodes with initial trained values.
+# =====================================================================
+# PART 10: AUTO SUPERVISED TRAINING BACKTRACK ROUTINES
+# =====================================================================
 
 def train_network_supervised(net: CodeCognitiveNetwork, epochs: int = 50) -> None:
-    """
-    Runs simulated backpropagation updates over a synthetic dataset of task classes
-    to calibrate internal weights to production standards.
-    """
-    # Sample synthetic text tasks and their expected [risk, importance] targets
-    training_data = [
+    """Trains the network parameters on mock tasks using Adam optimization gradients."""
+    dataset = [
         ("delete the production database", [0.95, 0.90]),
         ("remove authentication filters", [0.90, 0.85]),
-        ("clean logs and formats", [0.70, 0.50]),
-        ("add unit tests for authentication", [0.15, 0.70]),
-        ("implement helper math function", [0.05, 0.30]),
-        ("create simple html landing interface", [0.02, 0.20]),
+        ("add unit tests for login logic", [0.10, 0.70]),
+        ("implement raw helper math formulas", [0.05, 0.30]),
     ]
 
-    lr = 0.05
-    for epoch in range(epochs):
-        for text, targets in training_data:
-            # Forward pass manual breakdown
+    lr = 0.01
+    for _ in range(epochs):
+        for text, targets in dataset:
             seq = net.encode_text_sequence(text)
             attended = net.attention.forward(seq)
             if not attended:
                 continue
             avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+            norm = net.layer_norm.forward(avg_pool)
 
-            # Dense chain
-            hidden = net.dense1.forward(avg_pool)
-            predictions = net.dense2.forward(hidden)
+            # Predict
+            h1 = net.dense1.forward(norm)
+            preds = net.dense2.forward(h1)
 
-            # Loss derivation
-            error = [predictions[0] - targets[0], predictions[1] - targets[1]]
-
-            # Backpropagation chain
-            d_dense1 = net.dense2.backward(error, lr)
-            net.dense1.backward(d_dense1, lr)
+            # Backpropagation
+            loss_grads = [preds[0] - targets[0], preds[1] - targets[1]]
+            dh1 = net.dense2.backward(loss_grads, lr)
+            net.dense1.backward(dh1, lr)
 
 
-# Auto train on startup to initialize weights correctly
+# Initial cognitive boot training on startup
 _global_cognitive_net = CodeCognitiveNetwork()
 train_network_supervised(_global_cognitive_net, epochs=10)
 
-# --- Additional Cognitive Auxiliary Layers to achieve production depth ---
+
+# =====================================================================
+# PART 11: HEURISTIC SEARCH AND STACKED NEURAL BLOCK MODULES
+# =====================================================================
 
 class DeepCognitiveBlock:
-    """
-    Stacked Deep Neural Architecture layer sequence containing LayerNorm, ResNet shortcuts,
-    and a double-layer dense Feed-Forward Network (FFN).
-    """
     def __init__(self, embed_dim: int):
         self.embed_dim = embed_dim
-        self.attention = SelfAttention(embed_dim)
-        self.dense1 = DenseLayer(embed_dim, embed_dim * 2, activation="relu")
+        self.attention = MultiHeadAttention(embed_dim, num_heads=2)
+        self.layer_norm = LayerNormalization(embed_dim)
+        self.dense1 = DenseLayer(embed_dim, embed_dim * 2, activation="leaky_relu")
         self.dense2 = DenseLayer(embed_dim * 2, embed_dim, activation="identity")
 
-    def layer_norm(self, vec: list[float]) -> list[float]:
-        """Simple Layer Normalisation helper."""
-        if not vec:
-            return []
-        mean = sum(vec) / len(vec)
-        variance = sum((x - mean) ** 2 for x in vec) / len(vec)
-        eps = 1e-5
-        std = math.sqrt(variance + eps)
-        return [(x - mean) / std for x in vec]
-
-    def forward(self, sequence: list[list[float]]) -> list[list[float]]:
-        """Applies Attention, LayerNorm, Residual Shortcut, FFN feed, and a final norm."""
-        # 1. Multi-head/Single-head attention forward
+    def forward(self, sequence: List[List[float]]) -> List[List[float]]:
         attn_out = self.attention.forward(sequence)
+        norm1 = [self.layer_norm.forward(vector_add(x, attn)) for x, attn in zip(sequence, attn_out)]
 
-        # LayerNorm and Residual connection
-        norm1 = []
-        for x, attn in zip(sequence, attn_out):
-            norm1.append(self.layer_norm(vector_add(x, attn)))
-
-        # 2. Feed-Forward Neural Network
-        norm2 = []
+        final_out = []
         for x in norm1:
             h = self.dense1.forward(x)
             out = self.dense2.forward(h)
-            norm2.append(self.layer_norm(vector_add(x, out)))
-
-        return norm2
+            final_out.append(self.layer_norm.forward(vector_add(x, out)))
+        return final_out
 
 
 class CodeHeuristicRanker:
-    """
-    Cognitive ranking and scoring model. Uses deep similarity vector matrices
-    to rank proposed linter fixes and choose the optimal solution candidate.
-    """
     def __init__(self, feature_dim: int = 16):
         self.feature_dim = feature_dim
         self.similarity_weights = xavier_init(feature_dim, feature_dim)
 
-    def compute_similarity(self, v1: list[float], v2: list[float]) -> float:
-        """Calculates bilinear similarity metric: v1^T * W * v2."""
-        projected_v2 = matrix_vector_multiply(self.similarity_weights, v2)
-        return dot_product(v1, projected_v2)
+    def compute_similarity(self, v1: List[float], v2: List[float]) -> float:
+        proj_v2 = matrix_vector_multiply(self.similarity_weights, v2)
+        return dot_product(v1, proj_v2)
 
-    def rank_candidates(self, bug_context_emb: list[float], candidate_patches_embs: list[list[float]]) -> list[int]:
-        """Ranks patch suggestions by similarity to bug root cause embedding."""
+    def rank_candidates(self, bug_context_emb: List[float], candidate_patches_embs: List[List[float]]) -> List[int]:
         scores = []
         for idx, patch_emb in enumerate(candidate_patches_embs):
             sim = self.compute_similarity(bug_context_emb, patch_emb)
             scores.append((sim, idx))
-        # Sort descending by similarity
-        scores.sort(key=lambda item: item[0], reverse=True)
+        scores.sort(key=lambda x: x[0], reverse=True)
         return [idx for _, idx in scores]

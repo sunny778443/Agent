@@ -3,24 +3,28 @@ Unit and Integration tests for the Neural Cognitive Module.
 Verifies from-scratch matrix, Layer, attention, GCN, LSTM, and CodeCognitiveNetwork states.
 """
 import unittest
-
+import math
 from agent.cognitive import (
-    CodeCognitiveNetwork,
-    CodeHeuristicRanker,
-    DeepCognitiveBlock,
-    DenseLayer,
-    GraphConvolution,
-    LSTMCell,
-    SelfAttention,
     dot_product,
+    vector_add,
     matrix_multiply,
     matrix_vector_multiply,
+    transpose,
     sigmoid,
     softmax,
-    transpose,
-    vector_add,
+    DenseLayer,
+    MultiHeadAttention,
+    GraphAttentionLayer,
+    LSTMCell,
+    CodeCognitiveNetwork,
+    DeepCognitiveBlock,
+    CodeHeuristicRanker,
+    SGDMomentum,
+    RMSprop,
+    Adam,
+    huber_loss,
+    cross_entropy_loss
 )
-
 
 class TestCognitiveModule(unittest.TestCase):
     def test_basic_linear_algebra(self):
@@ -59,18 +63,18 @@ class TestCognitiveModule(unittest.TestCase):
         d_in = layer.backward(d_out, lr=0.01)
         self.assertEqual(len(d_in), 3)
 
-    def test_self_attention(self):
-        attn = SelfAttention(embed_dim=4)
+    def test_multi_head_attention(self):
+        attn = MultiHeadAttention(embed_dim=4, num_heads=2)
         seq = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
         out = attn.forward(seq)
         self.assertEqual(len(out), 2)
         self.assertEqual(len(out[0]), 4)
 
-    def test_graph_convolution(self):
-        gcn = GraphConvolution(in_features=3, out_features=2)
+    def test_graph_attention(self):
+        gat = GraphAttentionLayer(in_features=3, out_features=2)
         node_features = [[1.0, 0.0, 0.0], [0.0, 1.0, 1.0]]
         adj_matrix = [[1.0, 1.0], [1.0, 1.0]]
-        out = gcn.forward(node_features, adj_matrix)
+        out = gat.forward(node_features, adj_matrix)
         self.assertEqual(len(out), 2)
         self.assertEqual(len(out[0]), 2)
 
@@ -101,7 +105,7 @@ class TestCognitiveModule(unittest.TestCase):
         metrics = net.process_project_dependency_graph(file_contents, dependencies)
         self.assertIn("main.py", metrics)
         self.assertIn("utils.py", metrics)
-        self.assertEqual(len(metrics["main.py"]), 2) # [bug_risk, importance]
+        self.assertEqual(len(metrics["main.py"]), 2)
 
     def test_deep_cognitive_block_norm(self):
         block = DeepCognitiveBlock(embed_dim=4)
@@ -114,11 +118,25 @@ class TestCognitiveModule(unittest.TestCase):
         ranker = CodeHeuristicRanker(feature_dim=4)
         bug = [1.0, 0.0, 0.0, 0.0]
         patches = [
-            [0.0, 1.0, 0.0, 0.0], # unrelated
-            [0.9, 0.1, 0.0, 0.0]  # highly similar
+            [0.0, 1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0, 0.0]
         ]
         ranks = ranker.rank_candidates(bug, patches)
         self.assertEqual(len(ranks), 2)
+
+    def test_optimizers_and_losses(self):
+        # test Huber Loss
+        self.assertAlmostEqual(huber_loss([1.0], [1.5]), 0.125)
+        # test Cross entropy
+        self.assertGreater(cross_entropy_loss([0.1, 0.9], [0.0, 1.0]), 0.0)
+
+        # verify optimizer classes initialization
+        opt_momentum = SGDMomentum()
+        opt_rmsprop = RMSprop()
+        opt_adam = Adam()
+        self.assertEqual(opt_momentum.lr, 0.01)
+        self.assertEqual(opt_rmsprop.lr, 0.001)
+        self.assertEqual(opt_adam.lr, 0.001)
 
 if __name__ == "__main__":
     unittest.main()
