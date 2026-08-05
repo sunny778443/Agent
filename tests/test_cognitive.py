@@ -1,39 +1,42 @@
 """
-Unit and Integration tests for the Neural Cognitive Module.
-Verifies from-scratch matrix, Layer, attention, GCN, LSTM, and CodeCognitiveNetwork states.
+Unit and Integration tests for the Neural Cognitive Module and Adaptive Cognition Layer.
+Verifies from-scratch matrix, Layer, attention, GCN, LSTM, CodeCognitiveNetwork,
+experience memories, user emotion understanding, strategy ranking, and reward engines.
 """
-import json
-import os
 import unittest
-
+import math
+import os
+import json
 from agent.cognitive import (
-    Adam,
-    CodeCognitiveNetwork,
-    CodeHeuristicRanker,
-    CognitiveDatasetLoader,
-    DeepCognitiveBlock,
-    DenseLayer,
-    GraphAttentionLayer,
-    LSTMCell,
-    MultiHeadAttention,
-    RMSprop,
-    SGDMomentum,
-    StableTrainingPipeline,
-    cross_entropy_loss,
     dot_product,
-    huber_loss,
+    vector_add,
     matrix_multiply,
     matrix_vector_multiply,
+    transpose,
     sigmoid,
     softmax,
-    train_evolutionary_strategy,
-    train_reinforcement_learning,
+    DenseLayer,
+    MultiHeadAttention,
+    GraphAttentionLayer,
+    LSTMCell,
+    CodeCognitiveNetwork,
+    DeepCognitiveBlock,
+    CodeHeuristicRanker,
+    SGDMomentum,
+    RMSprop,
+    Adam,
+    huber_loss,
+    cross_entropy_loss,
     train_unsupervised_mlm,
-    transpose,
-    vector_add,
+    train_reinforcement_learning,
+    train_evolutionary_strategy,
+    mean_squared_error,
+    CognitiveDatasetLoader,
+    StableTrainingPipeline
 )
 from agent.planner import Planner
-
+from agent.memory import PersistentMemory
+from agent.user_understanding import UserUnderstandingModel
 
 class TestCognitiveModule(unittest.TestCase):
     def test_basic_linear_algebra(self):
@@ -258,7 +261,7 @@ class TestCognitiveModule(unittest.TestCase):
         net = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
         pipeline = StableTrainingPipeline(net, lr_init=0.05, decay_rate=0.9)
 
-        res = pipeline.train(loaded_json, epochs=5, val_ratio=0.5, checkpoint_path=checkpoint_path)
+        pipeline.train(loaded_json, epochs=5, val_ratio=0.5, checkpoint_path=checkpoint_path)
         self.assertEqual(len(pipeline.metrics_history), 5)
         self.assertTrue(os.path.exists(checkpoint_path))
 
@@ -278,6 +281,97 @@ class TestCognitiveModule(unittest.TestCase):
         self.assertIn("steps", res)
         self.assertTrue(len(res["steps"]) >= 2)
         self.assertIn("verify", res["steps"][0])
+
+    def test_deterministic_training_behavior(self):
+        """Verifies that seeding the stable training pipeline makes learning perfectly deterministic."""
+        dataset = [
+            ("delete local file systems", [0.95, 0.85]),
+            ("scaffold a simple hello world utility", [0.02, 0.15])
+        ]
+
+        # Instantiate networks
+        net1 = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
+        net2 = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
+
+        # Save net1 initial state and reload into net2 to ensure identical starting weights
+        init_weights_path = "temp_init_weights.json"
+        net1.save_weights(init_weights_path)
+        net2.load_weights(init_weights_path)
+
+        # Train Net 1
+        pipeline1 = StableTrainingPipeline(net1, lr_init=0.05, decay_rate=0.9)
+        pipeline1.train(dataset, epochs=5, val_ratio=0.5, seed=12345, checkpoint_path=None)
+        pred_risk_1 = net1.predict_task_risk("delete local file systems")
+
+        # Train Net 2
+        pipeline2 = StableTrainingPipeline(net2, lr_init=0.05, decay_rate=0.9)
+        pipeline2.train(dataset, epochs=5, val_ratio=0.5, seed=12345, checkpoint_path=None)
+        pred_risk_2 = net2.predict_task_risk("delete local file systems")
+
+        # Clean file
+        if os.path.exists(init_weights_path):
+            os.remove(init_weights_path)
+
+        self.assertAlmostEqual(pred_risk_1, pred_risk_2)
+
+    def test_early_stopping_trigger(self):
+        """Verifies early stopping terminates loop before maximum epochs on flat loss profile."""
+        net = CodeCognitiveNetwork(vocab_size=128, embed_dim=8)
+        # Seed training pipeline with low patience
+        pipeline = StableTrainingPipeline(net, lr_init=0.0, decay_rate=1.0) # 0 learning rate ensures flat loss
+        dataset = [
+            ("dummy task", [0.5, 0.5]),
+            ("another task", [0.5, 0.5])
+        ]
+        # Train with 10 epochs max, but patience = 2. It must stop after 3 epochs
+        res = pipeline.train(dataset, epochs=10, val_ratio=0.5, patience=2, seed=42, checkpoint_path=None)
+        history = res["history"]
+        self.assertTrue(len(history) < 10)
+
+    def test_adaptive_cognition_rewards_and_reflections(self):
+        """Verifies computational reward metrics, semantic experience logging, and user emotion modeling."""
+        db_path = "test_adaptive_memory.db"
+        if os.path.exists(db_path):
+            os.remove(db_path)
+
+        memory = PersistentMemory(db_path)
+        user_model = UserUnderstandingModel()
+
+        # Test User Emotion and Skill Profiling
+        profile = user_model.profile_user_request("AWESOME job! Refactor this code complexity ASAP")
+        self.assertGreater(profile["excitement"], 0.5)
+        self.assertGreater(profile["urgency"], 0.5)
+        self.assertEqual(profile["skill_level"], "expert")
+
+        # Test Experience Logging and Strategy Rankings
+        mock_embedding = [0.1] * 16
+        memory.store_experience(
+            objective="fix matrix inverse bug",
+            reasoning_steps="Step 1: check determinant",
+            tools_used="FastLinterAutoFix",
+            code_changes="import numpy",
+            success=True,
+            execution_time=0.8,
+            confidence=0.95,
+            user_feedback="excellent, very fast",
+            lessons_learned="Check shape before division",
+            reward=25.0,
+            embedding=mock_embedding
+        )
+
+        # Confirm rankings are computed stably
+        rankings = memory.get_strategy_rankings()
+        self.assertIn("FastLinterAutoFix", rankings)
+        self.assertGreater(rankings["FastLinterAutoFix"], 0.8)
+
+        # Test semantic search over experience vector logs
+        results = memory.search_experiences_semantically(mock_embedding, limit=2)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["objective"], "fix matrix inverse bug")
+        self.assertGreater(results[0]["similarity"], 0.9)
+
+        if os.path.exists(db_path):
+            os.remove(db_path)
 
 if __name__ == "__main__":
     unittest.main()

@@ -430,6 +430,8 @@ class LayerNormalization(Layer):
         self.last_var = 0.0
 
     def forward(self, inputs: list[float]) -> list[float]:
+        if len(inputs) != self.features:
+            raise ValueError(f"Tensor Dimension Mismatch: expected {self.features}, got {len(inputs)}")
         self.last_inputs = list(inputs)
         mean_val = vector_mean(inputs)
         variance_val = vector_variance(inputs, mean_val)
@@ -506,6 +508,8 @@ class DenseLayer(Layer):
         self.last_net_inputs: list[float] = []
 
     def forward(self, inputs: list[float]) -> list[float]:
+        if len(inputs) != self.in_features:
+            raise ValueError(f"Tensor Dimension Mismatch: expected {self.in_features}, got {len(inputs)}")
         self.last_inputs = list(inputs)
         net_inputs = []
         outputs = []
@@ -1152,12 +1156,14 @@ class StableTrainingPipeline:
         val_data = shuffled[split_idx:]
         return train_data, val_data
 
-    def evaluate(self, dataset: list[tuple[str, list[float]]]) -> dict[str, float]:
-        """Evaluates model performance metrics on a dataset, returning average MSE and MAE."""
+    def evaluate(self, dataset: list[tuple[str, list[float]]], tolerance: float = 0.15) -> dict[str, float]:
+        """Evaluates model performance metrics on a dataset, returning average MSE, MAE, and accuracy."""
         if not dataset:
-            return {"mse": 0.0, "mae": 0.0}
+            return {"mse": 0.0, "mae": 0.0, "accuracy": 0.0}
         total_mse = 0.0
         total_mae = 0.0
+        correct_count = 0
+        total_predictions = 0
         for text, targets in dataset:
             seq = self.net.encode_text_sequence(text)
             attended = self.net.attention.forward(seq)
@@ -1171,65 +1177,103 @@ class StableTrainingPipeline:
             total_mse += mean_squared_error(preds, targets)
             total_mae += sum(abs(p - t) for p, t in zip(preds, targets)) / len(targets)
 
+            # Compute accuracy based on tolerance
+            is_correct = all(abs(p - t) <= tolerance for p, t in zip(preds, targets))
+            if is_correct:
+                correct_count += 1
+            total_predictions += 1
+
         n = len(dataset)
+        accuracy = correct_count / total_predictions if total_predictions > 0 else 0.0
         return {
             "mse": total_mse / n,
-            "mae": total_mae / n
+            "mae": total_mae / n,
+            "accuracy": accuracy
         }
 
-    def train(self, dataset: list[tuple[str, list[float]]], epochs: int = 20, val_ratio: float = 0.2, checkpoint_path: str | None = "best_cognitive_model.json") -> dict[str, Any]:
+    def train(self, dataset: list[tuple[str, list[float]]], epochs: int = 20, val_ratio: float = 0.2, checkpoint_path: str | None = "best_cognitive_model.json", seed: int = 42, patience: int = 5, batch_size: int = 2) -> dict[str, Any]:
         """
-        Executes complete training loop with evaluation and checkpointing.
+        Executes complete training loop with deterministic seeding, validation splits,
+        mini-batch shuffling, early stopping, gradient safety, and checkpointing.
         """
-        train_data, val_data = self.split_dataset(dataset, val_ratio=val_ratio)
+        # Ensure deterministic seeding
+        random.seed(seed)
+
+        train_data, val_data = self.split_dataset(dataset, val_ratio=val_ratio, seed=seed)
         best_val_loss = float("inf")
+        epochs_no_improvement = 0
         lr = self.lr_init
 
+        # Clear metrics history
+        self.metrics_history.clear()
+
         for epoch in range(1, epochs + 1):
+            # Shuffle training data every epoch
+            shuffled_train = list(train_data)
+            random.shuffle(shuffled_train)
+
             epoch_losses = []
-            # Supervised training steps with gradient clipping
-            for text, targets in train_data:
-                seq = self.net.encode_text_sequence(text)
-                attended = self.net.attention.forward(seq)
-                if not attended:
-                    continue
-                avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
-                norm = self.net.layer_norm.forward(avg_pool)
-                h1 = self.net.dense1.forward(norm)
-                preds = self.net.dense2.forward(h1)
 
-                loss = mean_squared_error(preds, targets)
-                epoch_losses.append(loss)
+            # Mini-batch partitioning
+            for i in range(0, len(shuffled_train), batch_size):
+                batch = shuffled_train[i:i + batch_size]
 
-                # Backprop with clipped gradients
-                loss_grads = [preds[0] - targets[0], preds[1] - targets[1]]
-                loss_grads = clip_gradients(loss_grads, max_norm=1.0)
+                # Accumulate and backpropagation gradients
+                for text, targets in batch:
+                    seq = self.net.encode_text_sequence(text)
+                    attended = self.net.attention.forward(seq)
+                    if not attended:
+                        continue
+                    avg_pool = [sum(col) / len(attended) for col in transpose(attended)]
+                    norm = self.net.layer_norm.forward(avg_pool)
+                    h1 = self.net.dense1.forward(norm)
+                    preds = self.net.dense2.forward(h1)
 
-                dh1 = self.net.dense2.backward(loss_grads, lr)
-                dh1 = clip_gradients(dh1, max_norm=1.0)
-                self.net.dense1.backward(dh1, lr)
+                    loss = mean_squared_error(preds, targets)
+                    epoch_losses.append(loss)
+
+                    # Backprop with clipped and safety-validated gradients
+                    loss_grads = [preds[0] - targets[0], preds[1] - targets[1]]
+
+                    # Gradient safety checks (detect NaN or Inf)
+                    if any(math.isnan(g) or math.isinf(g) for g in loss_grads):
+                        continue
+
+                    loss_grads = clip_gradients(loss_grads, max_norm=1.0)
+
+                    dh1 = self.net.dense2.backward(loss_grads, lr)
+                    dh1 = clip_gradients(dh1, max_norm=1.0)
+                    self.net.dense1.backward(dh1, lr)
 
             # Compute learning and validation metrics
             train_metrics = self.evaluate(train_data)
             val_metrics = self.evaluate(val_data) if val_data else train_metrics
 
             epoch_loss = sum(epoch_losses) / len(epoch_losses) if epoch_losses else 0.0
+            val_loss = val_metrics["mse"]
+
             metrics_entry = {
                 "epoch": epoch,
                 "learning_rate": lr,
                 "train_loss": epoch_loss,
                 "train_mae": train_metrics["mae"],
-                "val_loss": val_metrics["mse"],
-                "val_mae": val_metrics["mae"]
+                "train_accuracy": train_metrics["accuracy"],
+                "val_loss": val_loss,
+                "val_mae": val_metrics["mae"],
+                "val_accuracy": val_metrics["accuracy"]
             }
             self.metrics_history.append(metrics_entry)
 
-            # Checkpointing
-            val_loss = val_metrics["mse"]
+            # Checkpointing & Early Stopping
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                epochs_no_improvement = 0
                 if checkpoint_path:
                     self.net.save_weights(checkpoint_path)
+            else:
+                epochs_no_improvement += 1
+                if epochs_no_improvement >= patience:
+                    break
 
             # Learning rate scheduling decay
             lr *= self.decay_rate

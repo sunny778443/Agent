@@ -4,13 +4,12 @@ Exposes real-time agent memory, task logs, sandbox telemetry, and repository ove
 """
 import json
 import sqlite3
-from typing import Any
-
-import psutil
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
+from typing import Dict, Any, List, Optional
+import os
+import psutil
 from agent.engine import Engine
 
 app = FastAPI(title="Autonomous Software Agent Dashboard API", version="1.0.0")
@@ -32,7 +31,7 @@ class TaskRequest(BaseModel):
     task: str
 
 @app.get("/api/status")
-def get_status() -> dict[str, Any]:
+def get_status() -> Dict[str, Any]:
     """Retrieves real-time resource telemetry and current state."""
     cpu = 0.0
     mem_pct = 0.0
@@ -56,7 +55,7 @@ def get_status() -> dict[str, Any]:
     }
 
 @app.post("/api/task")
-def start_task(req: TaskRequest) -> dict[str, Any]:
+def start_task(req: TaskRequest) -> Dict[str, Any]:
     """Triggers autonomous run for the specified user request."""
     try:
         res = engine.execute_task(req.task)
@@ -65,12 +64,12 @@ def start_task(req: TaskRequest) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/logs")
-def get_logs() -> list[dict[str, Any]]:
+def get_logs() -> List[Dict[str, Any]]:
     """Returns historical run execution details."""
     return engine.logs
 
 @app.get("/api/repository")
-def get_repository() -> dict[str, Any]:
+def get_repository() -> Dict[str, Any]:
     """Exposes mapped project structural maps and AST data."""
     try:
         return engine.repo_analyzer.build_project_context()
@@ -78,7 +77,7 @@ def get_repository() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/memory")
-def get_memory() -> list[dict[str, Any]]:
+def get_memory() -> List[Dict[str, Any]]:
     """Returns stored preferences, keys, and past success profiles."""
     try:
         return engine.memory.get_all_knowledge()
@@ -86,7 +85,7 @@ def get_memory() -> list[dict[str, Any]]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/reflections")
-def get_reflections() -> list[dict[str, Any]]:
+def get_reflections() -> List[Dict[str, Any]]:
     """Retrieves all self-reflections saved by the agent."""
     try:
         reflections = []
@@ -107,8 +106,38 @@ def get_reflections() -> list[dict[str, Any]]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/strategy_rankings")
+def get_strategy_rankings() -> Dict[str, float]:
+    """Retrieves computed success rate metrics for execution strategies."""
+    return engine.memory.get_strategy_rankings()
+
+@app.get("/api/experiences")
+def get_experiences() -> List[Dict[str, Any]]:
+    """Retrieves raw experience logs from the persistent experience matrix database."""
+    try:
+        results = []
+        with sqlite3.connect(engine.memory.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM experience_memory ORDER BY id DESC")
+            rows = cursor.fetchall()
+            for r in rows:
+                results.append({
+                    "id": r["id"],
+                    "objective": r["objective"],
+                    "tools_used": r["tools_used"],
+                    "success": bool(r["success"]),
+                    "execution_time": r["execution_time"],
+                    "confidence": r["confidence"],
+                    "reward": r["reward"],
+                    "lessons_learned": r["lessons_learned"]
+                })
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/training_metrics")
-def get_training_metrics() -> list[dict[str, Any]]:
+def get_training_metrics() -> List[Dict[str, Any]]:
     """
     Returns standard learning metrics history of the CodeCognitiveNetwork.
     Simulates stable training trace losses if not trained live, ensuring frontend charts can load.

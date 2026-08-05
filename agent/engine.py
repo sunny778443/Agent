@@ -1,7 +1,7 @@
 """
 Core Engine Orchestrator module.
 Ties together planning, repository parsing, security safety checks, test suites,
-sandboxed runtimes, and the autonomous self-repair cycle with strategy selection.
+sandboxed runtimes, and the autonomous self-repair cycle with strategy selection, reflections, and rewards.
 """
 import json
 import os
@@ -18,6 +18,7 @@ from agent.repository import RepositoryAnalyzer
 from agent.security import SecurityManager
 from agent.static_analysis import StaticAnalyzer
 from agent.testing import AutomatedTester
+from agent.user_understanding import UserUnderstandingModel
 
 
 class Engine:
@@ -36,6 +37,7 @@ class Engine:
         self.repair_loop = SelfRepairLoop(self.llm, self.memory)
         self.github = GitHubManager(self.workspace_path)
         self.cognitive_net = CodeCognitiveNetwork()
+        self.user_model = UserUnderstandingModel()
 
         # State log for current run / session to expose to dashboard
         self.current_task: str | None = None
@@ -79,12 +81,14 @@ Example: src/math.py
         """
         Runs the full autonomous architecture pipeline:
         1. Pre-reasoning SQLite Memory Retrieval.
-        2. Prompt Safety Scan.
-        3. Plan generation & Risk/Confidence Assessment.
-        4. Tool Selection & Code generation.
-        5. Sandboxed compilation and testing.
-        6. Post-task self-reflection and persistence.
+        2. User Emotion & Skill Profiling.
+        3. Prompt Safety Scan.
+        4. Plan generation & Risk/Confidence Assessment.
+        5. Tool Selection, Strategy Ranking, & Code generation.
+        6. Sandboxed compilation and testing.
+        7. Post-task computational rewards and reflections.
         """
+        start_time = time.perf_counter()
         self.current_task = task_description
         self.iteration_count = 0
         self.logs.clear()
@@ -104,13 +108,17 @@ Example: src/math.py
 
         self.log_event("MEMORY_RETRIEVED", {"context_summary": memory_context})
 
-        # 2. Input Safety Validation
+        # 2. User Emotion & Skill Profiling
+        user_profile = self.user_model.profile_user_request(task_description)
+        self.log_event("USER_PROFILE_DETECTED", user_profile)
+
+        # 3. Input Safety Validation
         is_safe_prompt, prompt_msg = self.security.validate_prompt(task_description)
         if not is_safe_prompt:
             self.log_event("SECURITY_BLOCKED", {"message": prompt_msg})
             return {"status": "blocked", "reason": prompt_msg}
 
-        # 3. Plan Generation & Risk/Confidence Assessment
+        # 4. Plan Generation & Risk/Confidence Assessment
         self.log_event("TOOL_SELECTION", {"tool": "Planner", "phase": "reasoning"})
         plan = self.planner.create_execution_plan_with_context(task_description, memory_context=memory_context)
         self.current_plan = plan
@@ -123,7 +131,11 @@ Example: src/math.py
         self.log_event("PLAN_GENERATED", plan)
         self.memory.log_execution(task_description, plan, "In Progress")
 
-        # 4. Tool Selection & Code Generation
+        # 5. Tool Selection, Strategy Ranking, & Code Generation
+        # --- STRATEGY LEARNING RANKING ---
+        strategy_rankings = self.memory.get_strategy_rankings()
+        self.log_event("STRATEGY_LEARNING_RANKINGS", {"rankings": strategy_rankings})
+
         self.log_event("TOOL_SELECTION", {"tool": "RepositoryAnalyzer", "phase": "targeting"})
         target_file = self.determine_target_file(task_description)
         self.log_event("TARGET_IDENTIFIED", {"target_file": target_file})
@@ -133,7 +145,7 @@ Example: src/math.py
 
         # Generate code from LLM
         self.log_event("TOOL_SELECTION", {"tool": "LLMClient", "phase": "generation"})
-        prompt = f"Generate complete, robust production-grade code to satisfy this task: {task_description}"
+        prompt = f"Generate complete, robust production-grade code to satisfy this task: {task_description}. Style guide parameters: {user_profile.get('style_guide', '')}"
         generated_code = self.llm.generate(prompt)
 
         # Sanitize and validate
@@ -168,10 +180,13 @@ Example: src/math.py
             generated_test_file = self.tester.generate_tests(target_file, sanitized_code)
             self.log_event("TEST_SKELETON_GENERATED", {"test_file": generated_test_file})
 
-        # 5. Verification and Sandboxed Self-Repair Loop (up to 3 iterations)
+        # 6. Verification and Sandboxed Self-Repair Loop (up to 3 iterations)
         max_iterations = 3
         success = False
         error_logs = ""
+
+        reward_score = 0.0
+        used_strategy = "NeuralPromptContextualRepair"
 
         for iteration in range(1, max_iterations + 1):
             self.iteration_count = iteration
@@ -190,7 +205,13 @@ Example: src/math.py
             if lint_success and type_success and test_success:
                 success = True
                 self.log_event("VERIFICATION_SUCCESS", {"iteration": iteration})
+                reward_score += 15.0 # +15 tests passed
                 break
+
+            # Penalize failures
+            reward_score -= 15.0 # -15 failed build/lints
+            if not test_success:
+                reward_score -= 10.0 # -10 failed tests/exceptions
 
             # Capture issues and choose best repair strategy
             error_logs = f"Sandbox Lint Success: {lint_success}. Sandbox Type Success: {type_success}. Sandbox Test Success: {test_success}.\n"
@@ -204,12 +225,18 @@ Example: src/math.py
             self.log_event("VERIFICATION_FAILURE", {"iteration": iteration, "errors": error_logs})
 
             # --- DECIDE OPTIMAL STRATEGY before acting ---
-            if not lint_success and type_success and test_success:
-                # STRATEGY A: Fast local ruff check --fix (bypasses LLM latency entirely!)
-                self.log_event("STRATEGY_SELECTED", {"strategy": "FastLinterAutoFix", "reason": "Ruff formatting issue detected"})
+            # Prefer FastLinterAutoFix if it's purely formatting and has higher historical success rate
+            linter_success_rate = strategy_rankings.get("FastLinterAutoFix", 0.92)
+            neural_success_rate = strategy_rankings.get("NeuralPromptContextualRepair", 0.51)
+
+            if not lint_success and type_success and test_success and linter_success_rate > neural_success_rate:
+                # STRATEGY A: Fast local ruff check --fix
+                used_strategy = "FastLinterAutoFix"
+                self.log_event("STRATEGY_SELECTED", {"strategy": "FastLinterAutoFix", "reason": "Ruff formatting issue detected and ranked higher"})
                 self.static_analyzer.repair_lint_issues(target_file, linter="ruff")
             else:
                 # STRATEGY B: Neural contextual prompt repair loop
+                used_strategy = "NeuralPromptContextualRepair"
                 self.log_event("STRATEGY_SELECTED", {"strategy": "NeuralPromptContextualRepair", "reason": "Structural logic or test failing"})
                 repaired_code = self.repair_loop.run_repair_iteration(target_file, sanitized_code, error_logs)
                 sanitized_code, _ = self.security.sanitize_code(repaired_code)
@@ -219,19 +246,58 @@ Example: src/math.py
 
             self.log_event("APPLIED_REPAIR", {"filepath": target_file})
 
-        # 6. Post-task Self-Reflection and Persistence
-        self.log_event("TOOL_SELECTION", {"tool": "PersistentMemory", "phase": "reflection"})
+        duration = time.perf_counter() - start_time
+
+        # Reward bonuses
+        if success:
+            reward_score += 10.0 # +10 bug fixed
+        if duration < 1.5:
+            reward_score += 5.0 # +5 faster execution
+
+        # 6. Post-task Self-Reflection
         reflection = {
             "task": task_description,
             "target_file": target_file,
             "verification_success": success,
             "total_repair_iterations": self.iteration_count,
             "plan_confidence": plan.get("confidence_score", 0.80),
-            "timestamp": time.time()
+            "duration_seconds": duration,
+            "reward_score": reward_score,
+            "what_went_well": "Sandbox tests and lint compilations passed cleanly" if success else "Initial code generated, but sandbox checks failed",
+            "what_failed": "None" if success else "Failed to pass automated sandboxed tests within iterations",
+            "better_strategy_suggestion": "The current tool selection was optimal" if success else "Consider writing intermediate mock unit-tests first to isolate targets",
+            "what_should_be_remembered": f"Task file {target_file} resolved cleanly with patch."
         }
+
         reflection_key = f"reflection_{int(time.time())}"
         self.memory.store_preference(reflection_key, json.dumps(reflection), category="reflections")
         self.log_event("POST_TASK_REFLECTION", reflection)
+
+        # 7. Experience Memory Insertion with from-scratch embeddings
+        seq = self.cognitive_net.encode_text_sequence(task_description)
+        if seq:
+            # Simple averaged token embedding from scratch
+            avg_emb = [sum(col) / len(seq) for col in zip(*seq)]
+            # Ensure it fits net.embed_dim (e.g. pad or truncate)
+            while len(avg_emb) < self.cognitive_net.embed_dim:
+                avg_emb.append(0.0)
+            avg_emb = avg_emb[:self.cognitive_net.embed_dim]
+        else:
+            avg_emb = [0.0] * self.cognitive_net.embed_dim
+
+        self.memory.store_experience(
+            objective=task_description,
+            reasoning_steps=json.dumps(plan.get("steps", [])),
+            tools_used=used_strategy,
+            code_changes=sanitized_code[:500],
+            success=success,
+            execution_time=duration,
+            confidence=plan.get("confidence_score", 0.80),
+            user_feedback=f"Analyzed emotion={user_profile.get('skill_level')}",
+            lessons_learned=reflection["what_should_be_remembered"],
+            reward=reward_score,
+            embedding=avg_emb
+        )
 
         if success:
             self.memory.store_bug_fix("successful-task-fix", "No errors", sanitized_code, target_file)
@@ -247,7 +313,7 @@ Example: src/math.py
                 self.log_event("GIT_COMMIT_SKIPPED", {"detail": str(git_err)})
 
             self.log_event("TASK_COMPLETE", {"status": "success"})
-            return {"status": "success", "file": target_file, "iterations": self.iteration_count}
+            return {"status": "success", "file": target_file, "iterations": self.iteration_count, "reward": reward_score}
         else:
             self.log_event("TASK_FAILED", {"status": "failed", "final_error": error_logs})
-            return {"status": "failed", "reason": error_logs, "iterations": self.iteration_count}
+            return {"status": "failed", "reason": error_logs, "iterations": self.iteration_count, "reward": reward_score}

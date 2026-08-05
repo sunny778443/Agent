@@ -3,7 +3,7 @@ import {
   Terminal, Shield, Play, RotateCcw, Cpu, HardDrive, RefreshCw,
   Layers, Database, Activity, Code, Compass, HelpCircle,
   ChevronRight, AlertTriangle, CheckCircle2, Sliders, Brain, MessageSquare,
-  BookOpen, Star, TrendingDown, Target, Zap
+  BookOpen, Star, TrendingDown, Target, Zap, Smile
 } from 'lucide-react';
 
 interface SystemStats {
@@ -47,6 +47,20 @@ interface SelfReflection {
   total_repair_iterations: number;
   plan_confidence: number;
   timestamp: number;
+  reward_score: number;
+  what_went_well: string;
+  better_strategy_suggestion: string;
+}
+
+interface ExperienceRecord {
+  id: number;
+  objective: string;
+  tools_used: string;
+  success: boolean;
+  execution_time: number;
+  confidence: number;
+  reward: number;
+  lessons_learned: string;
 }
 
 interface TrainingMetric {
@@ -65,6 +79,8 @@ export default function App() {
   const [repo, setRepo] = useState<RepoOverview | null>(null);
   const [memory, setMemory] = useState<MemoryKnowledge[]>([]);
   const [reflections, setReflections] = useState<SelfReflection[]>([]);
+  const [experiences, setExperiences] = useState<ExperienceRecord[]>([]);
+  const [strategyRankings, setStrategyRankings] = useState<Record<string, number>>({});
   const [trainingMetrics, setTrainingMetrics] = useState<TrainingMetric[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -73,6 +89,14 @@ export default function App() {
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [riskAssessment, setRiskAssessment] = useState<string>('N/A');
   const [confidenceScore, setConfidenceScore] = useState<number>(0.85);
+
+  // User emotion estimates
+  const [emotionProfile, setEmotionProfile] = useState<any>({
+    frustration: 0.1,
+    confusion: 0.1,
+    urgency: 0.1,
+    skill_level: "standard"
+  });
 
   const presets = [
     {
@@ -106,13 +130,20 @@ export default function App() {
       if (logsRes.ok) {
         const data = await logsRes.json();
         setLogs(data);
-        // Dynamically extract cognitive/plan details if they exist in logs
+
+        // Extract cognitive/plan details
         const planGen = data.find((l: any) => l.event_type === 'PLAN_GENERATED');
         if (planGen && planGen.details) {
           setRiskAssessment(`${Math.round(planGen.details.overall_risk_score * 100)}% - ${planGen.details.risk_assessment}`);
           if (planGen.details.confidence_score) {
             setConfidenceScore(planGen.details.confidence_score);
           }
+        }
+
+        // Extract user profile detected event
+        const userProf = data.find((l: any) => l.event_type === 'USER_PROFILE_DETECTED');
+        if (userProf && userProf.details) {
+          setEmotionProfile(userProf.details);
         }
       }
 
@@ -124,6 +155,12 @@ export default function App() {
 
       const reflectionsRes = await fetch('/api/reflections');
       if (reflectionsRes.ok) setReflections(await reflectionsRes.json());
+
+      const experiencesRes = await fetch('/api/experiences');
+      if (experiencesRes.ok) setExperiences(await experiencesRes.json());
+
+      const strategiesRes = await fetch('/api/strategy_rankings');
+      if (strategiesRes.ok) setStrategyRankings(await strategiesRes.json());
 
       const metricsRes = await fetch('/api/training_metrics');
       if (metricsRes.ok) setTrainingMetrics(await metricsRes.json());
@@ -171,10 +208,10 @@ export default function App() {
           <Brain className="h-6 w-6 text-emerald-400 animate-pulse" />
           <div>
             <h1 className="text-lg font-bold tracking-tight flex items-center space-x-2">
-              <span>Project Karthikeya Dashboard</span>
-              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono animate-pulse">Production-v3.0</span>
+              <span>Project Karthikeya Adaptive Agent Portal</span>
+              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">Phase 3 Cognition</span>
             </h1>
-            <p className="text-xs text-slate-400">Autonomous Self-Repairing Codebase Engine & Cognitive Reasoning</p>
+            <p className="text-xs text-slate-400">Computational Reward Optimization & Multi-Paradigm Reinforce Engine</p>
           </div>
         </div>
         <div className="flex items-center space-x-4">
@@ -218,80 +255,83 @@ export default function App() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold flex items-center space-x-2">
                 <MessageSquare className="h-4.5 w-4.5 text-emerald-400" />
-                <span>Command & Instruction Portal</span>
+                <span>Command Instruction Portal</span>
               </h2>
             </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed mb-4">
-              Type custom requests or pick a blueprint template below. Karthikeya will evaluate safety parameters, predict file risk weights using the GAT engine, and boot sandboxed verifications.
-            </p>
+            <textarea
+              className="w-full h-28 bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all font-mono mb-4"
+              placeholder="Dispatch instructions... E.g. 'Build a safe matrix division module with tests.'"
+              value={taskInput}
+              onChange={(e) => setTaskInput(e.target.value)}
+            />
 
-            <div className="space-y-4 flex-1">
-              <div className="relative">
-                <textarea
-                  className="w-full h-32 bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all font-mono"
-                  placeholder="Dispatch instructions... E.g. 'Build a safe matrix division module with tests.'"
-                  value={taskInput}
-                  onChange={(e) => setTaskInput(e.target.value)}
-                />
-              </div>
-
-              {/* Confidence Score Indicator */}
-              <div className="bg-slate-950/60 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between text-xs font-mono">
-                <span className="text-slate-400">PLAN CONFIDENCE:</span>
-                <span className={`font-bold ${confidenceScore > 0.8 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {Math.round(confidenceScore * 100)}%
+            {/* Dynamic Emotion Profile Card */}
+            <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl space-y-2 mb-4">
+              <div className="flex items-center justify-between text-[10px] uppercase font-mono text-slate-400 border-b border-slate-800 pb-1.5 mb-1">
+                <span className="flex items-center space-x-1">
+                  <Smile className="h-3.5 w-3.5 text-indigo-400" />
+                  <span>Emotion Profile</span>
                 </span>
+                <span className="text-indigo-400 font-bold">Skill: {emotionProfile.skill_level}</span>
               </div>
-
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => triggerTask()}
-                  disabled={loading || !taskInput.trim()}
-                  className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 font-bold text-slate-950 py-2.5 px-4 rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/10 cursor-pointer text-xs"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin text-slate-950" />
-                      <span>Processing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 text-slate-950 fill-slate-950" />
-                      <span>Dispatch Agent</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => { setTaskInput(''); setSelectedPreset(''); }}
-                  className="p-2.5 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition rounded-xl cursor-pointer"
-                  title="Clear parameters"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                </button>
+              <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-400 font-mono text-center">
+                <div className="bg-slate-900/60 p-1.5 rounded">
+                  <span>FRUST:</span>
+                  <span className="block font-bold text-slate-200">{Math.round(emotionProfile.frustration * 100)}%</span>
+                </div>
+                <div className="bg-slate-900/60 p-1.5 rounded">
+                  <span>CONF:</span>
+                  <span className="block font-bold text-slate-200">{Math.round(emotionProfile.confusion * 100)}%</span>
+                </div>
+                <div className="bg-slate-900/60 p-1.5 rounded">
+                  <span>URG:</span>
+                  <span className="block font-bold text-slate-200">{Math.round(emotionProfile.urgency * 100)}%</span>
+                </div>
               </div>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => triggerTask()}
+                disabled={loading || !taskInput.trim()}
+                className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 font-bold text-slate-950 py-2.5 px-4 rounded-xl transition-all flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/10 cursor-pointer text-xs"
+              >
+                {loading ? (
+                  <RefreshCw className="h-4 w-4 animate-spin text-slate-950" />
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 text-slate-950 fill-slate-950" />
+                    <span>Dispatch Agent</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => { setTaskInput(''); setSelectedPreset(''); }}
+                className="p-2.5 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition rounded-xl cursor-pointer"
+                title="Clear parameters"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
             </div>
           </div>
 
-          {/* Preset Task Templates */}
+          {/* Strategy Rankings */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl transition-all hover:border-slate-700">
-            <h3 className="text-xs font-bold text-slate-300 mb-3 flex items-center space-x-2">
-              <Compass className="h-4 w-4 text-sky-400" />
-              <span>Instruction Templates</span>
+            <h3 className="text-xs font-bold text-indigo-400 mb-3 flex items-center space-x-2">
+              <Zap className="h-4 w-4" />
+              <span>Strategy Success Rankings</span>
             </h3>
-
             <div className="space-y-3.5">
-              {presets.map((preset, index) => (
-                <div
-                  key={index}
-                  onClick={() => applyPreset(preset.prompt)}
-                  className={`border p-3 rounded-xl cursor-pointer transition-all hover:bg-slate-800/40 hover:border-slate-600 flex flex-col ${
-                    selectedPreset === preset.prompt ? 'border-emerald-500 bg-emerald-500/5' : 'border-slate-800 bg-slate-950/40'
-                  }`}
-                >
-                  <span className="text-xs font-bold text-slate-200 mb-0.5">{preset.title}</span>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">{preset.desc}</p>
+              {Object.entries(strategy_rankings).map(([strategy, rate]) => (
+                <div key={strategy} className="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-1.5 font-mono text-[11px]">
+                  <div className="flex justify-between font-bold text-slate-200">
+                    <span>{strategy}</span>
+                    <span className="text-emerald-400">{Math.round(rate * 100)}% Success</span>
+                  </div>
+                  <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                    <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${rate * 100}%` }}></div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -305,14 +345,14 @@ export default function App() {
             <div className="border-b border-slate-800 px-5 py-3.5 bg-slate-900/40 flex items-center justify-between">
               <h2 className="text-xs font-bold flex items-center space-x-2">
                 <Terminal className="h-4 w-4 text-amber-400" />
-                <span>Live Action Traces & Tool Selection</span>
+                <span>Live Action Traces & Thoughts</span>
               </h2>
               <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">
                 {logs.length} events
               </span>
             </div>
 
-            <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-slate-950/40 font-mono text-xs max-h-[350px]">
+            <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-slate-950/40 font-mono text-xs max-h-[300px]">
               {logs.length > 0 ? (
                 logs.map((log, index) => {
                   const isToolSel = log.event_type === "TOOL_SELECTION";
@@ -344,40 +384,36 @@ export default function App() {
             </div>
           </div>
 
-          {/* Post-Task Reflections */}
+          {/* Historical Experience Logs */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl transition-all hover:border-slate-700">
-            <h3 className="text-xs font-bold text-indigo-400 mb-3 flex items-center space-x-2">
-              <Zap className="h-4 w-4" />
-              <span>Post-Task Self Reflections (Continuous Evaluation)</span>
+            <h3 className="text-xs font-bold text-sky-400 mb-3 flex items-center space-x-2">
+              <BookOpen className="h-4 w-4" />
+              <span>Historical Experiences & Computational Rewards</span>
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[200px] overflow-y-auto pr-1">
-              {reflections.length > 0 ? (
-                reflections.map((ref, idx) => (
-                  <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-[11px] font-mono space-y-2">
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-1.5">
-                      <span className="text-slate-300 font-bold truncate max-w-[120px]" title={ref.task}>
-                        {ref.task}
-                      </span>
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans ${
-                        ref.verification_success ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                      }`}>
-                        {ref.verification_success ? 'VERIFIED' : 'FAILED'}
-                      </span>
+            <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1 font-mono text-[11px]">
+              {experiences.length > 0 ? (
+                experiences.map((exp) => (
+                  <div key={exp.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex items-center justify-between">
+                    <div>
+                      <span className="text-slate-300 font-bold block truncate max-w-[200px]">{exp.objective}</span>
+                      <span className="text-[9px] text-slate-500 uppercase">Strategy: {exp.tools_used}</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400">
+                    <div className="flex items-center space-x-4 text-right">
                       <div>
-                        <span>File: </span>
-                        <span className="text-slate-200 block truncate">{ref.target_file}</span>
+                        <span className="text-[9px] text-slate-500 block">REWARD</span>
+                        <span className={`font-bold ${exp.reward > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {exp.reward > 0 ? '+' : ''}{exp.reward}
+                        </span>
                       </div>
                       <div>
-                        <span>Confidence: </span>
-                        <span className="text-slate-200 block">{Math.round(ref.plan_confidence * 100)}%</span>
+                        <span className="text-[9px] text-slate-500 block">TIME</span>
+                        <span className="text-slate-300 font-bold">{exp.execution_time.toFixed(2)}s</span>
                       </div>
                     </div>
                   </div>
                 ))
               ) : (
-                <p className="text-[11px] text-slate-500 col-span-2">No self-reflections saved yet. Run some tasks to save heuristics.</p>
+                <p className="text-slate-500 text-xs">No experience records stored in the SQLite experience matrix yet.</p>
               )}
             </div>
           </div>
@@ -391,9 +427,6 @@ export default function App() {
               <TrendingDown className="h-4 w-4" />
               <span>Cognitive Neural Loss History</span>
             </h2>
-            <p className="text-[10px] text-slate-400 mb-3">
-              Tracks the reduction in error (Mean Squared Error) and Absolute Deviation (MAE) across optimization epochs.
-            </p>
             <div className="flex-1 overflow-y-auto max-h-[350px] space-y-2 pr-1 font-mono text-[10px]">
               {trainingMetrics.map((m) => (
                 <div key={m.epoch} className="bg-slate-950 border border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between">
