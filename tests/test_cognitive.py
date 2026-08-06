@@ -343,6 +343,17 @@ class TestCognitiveModule(unittest.TestCase):
         self.assertGreater(profile["urgency"], 0.5)
         self.assertEqual(profile["skill_level"], "expert")
 
+        # Test additional human emotions
+        anger_profile = user_model.profile_user_request("this is completely BROKEN and stupidly wrong!")
+        self.assertGreater(anger_profile["anger"], 0.6)
+        self.assertGreater(anger_profile["frustration"], 0.6)
+
+        anxiety_profile = user_model.profile_user_request("I am panic scared of a major security leakage of API tokens")
+        self.assertGreater(anxiety_profile["anxiety"], 0.6)
+
+        gratitude_profile = user_model.profile_user_request("thank you so much, perfect kind helper")
+        self.assertGreater(gratitude_profile["gratitude"], 0.7)
+
         # Test Experience Logging and Strategy Rankings
         mock_embedding = [0.1] * 16
         memory.store_experience(

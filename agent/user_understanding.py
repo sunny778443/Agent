@@ -1,16 +1,16 @@
 """
 User Understanding, Emotion, and Skill Profiling module.
-Estimates frustration, confusion, urgency, excitement, satisfaction, and skill level
-to dynamically adjust communication styles and planning granularity.
+Estimates a complete multi-dimensional spectrum of human emotions:
+Anger, Frustration, Disappointment, Curiosity, Skepticism, Anxiety, Gratitude,
+Happiness, Excitement, Impatience, Urgency, Boredom, Pride, and overall Satisfaction.
 """
 from typing import Any
 
 
 class UserUnderstandingModel:
     """
-    Profiles incoming user requests to estimate emotion (frustration, confusion, urgency,
-    excitement, satisfaction) and skill levels (beginner, expert) to dynamically
-    calibrate plan steps explanation depths and communication styles.
+    Profiles incoming user requests to estimate an exhaustive range of human emotions
+    to dynamically calibrate communication styles and planning granularity.
     """
     def __init__(self) -> None:
         pass
@@ -22,36 +22,67 @@ class UserUnderstandingModel:
         """
         text_lower = text.lower()
 
-        # 1. Frustration heuristic
-        frustration = 0.1
-        if any(w in text_lower for w in ["fail", "error", "broken", "stop", "stupid", "wrong", "blank", "unusable"]):
-            frustration = 0.8
-        elif "please" in text_lower or "help" in text_lower:
-            frustration = 0.4
+        # 1. Anger / Frustration
+        anger = 0.05
+        if any(w in text_lower for w in ["fail", "error", "broken", "stop", "stupid", "wrong", "blank", "unusable", "hate", "bad"]):
+            anger = 0.8
+        frustration = anger
 
-        # 2. Confusion heuristic
-        confusion = 0.1
-        if any(w in text_lower for w in ["why", "how", "what", "where", "confused", "cannot find", "blank", "blank white"]):
-            confusion = 0.7
+        # 2. Disappointment
+        disappointment = 0.05
+        if any(w in text_lower for w in ["sad", "unfortunate", "pity", "disappointed", "regret", "alas"]):
+            disappointment = 0.75
 
-        # 3. Urgency heuristic
-        urgency = 0.1
-        if any(w in text_lower for w in ["asap", "now", "urgent", "quick", "fast", "immediately", "blocker", "emergency"]):
-            urgency = 0.9
+        # 3. Curiosity / Inquisitiveness
+        curiosity = 0.05
+        if any(w in text_lower for w in ["why", "how", "what", "where", "explain", "learn", "wonder"]):
+            curiosity = 0.85
 
-        # 4. Excitement heuristic
-        excitement = 0.1
-        if any(w in text_lower for w in ["awesome", "great", "nice", "cool", "spectacular", "love"]):
-            excitement = 0.8
+        # 4. Skepticism / Doubt
+        skepticism = 0.05
+        if any(w in text_lower for w in ["doubt", "unsure", "maybe", "really", "verify", "check", "confirm", "proof"]):
+            skepticism = 0.7
 
-        # 5. Satisfaction score
+        # 5. Anxiety / Panic
+        anxiety = 0.05
+        if any(w in text_lower for w in ["panic", "scared", "worried", "anxious", "fear", "afraid", "leak", "security"]):
+            anxiety = 0.8
+
+        # 6. Gratitude / Appreciation
+        gratitude = 0.05
+        if any(w in text_lower for w in ["thank", "thanks", "appreciate", "kind", "helpful", "good job", "perfect"]):
+            gratitude = 0.9
+
+        # 7. Happiness / Excitement
+        happiness = 0.05
+        if any(w in text_lower for w in ["awesome", "great", "nice", "cool", "spectacular", "love", "happy", "joy"]):
+            happiness = 0.85
+        excitement = happiness
+
+        # 8. Impatience / Urgency
+        impatience = 0.05
+        if any(w in text_lower for w in ["asap", "now", "urgent", "quick", "fast", "immediately", "blocker", "emergency", "hurry"]):
+            impatience = 0.9
+        urgency = impatience
+
+        # 9. Boredom / Indifference
+        boredom = 0.05
+        if any(w in text_lower for w in ["whatever", "meh", "bored", "slow", "tedious"]):
+            boredom = 0.7
+
+        # 10. Pride / Confidence
+        pride = 0.05
+        if any(w in text_lower for w in ["expert", "master", "achieved", "proud", "triumph"]):
+            pride = 0.75
+
+        # 11. Overall Satisfaction score
         satisfaction = 0.5
-        if excitement > 0.5:
+        if happiness > 0.5 or gratitude > 0.5:
             satisfaction = 0.9
-        elif frustration > 0.5:
+        elif anger > 0.5 or disappointment > 0.5:
             satisfaction = 0.2
 
-        # 6. Skill Profiling (beginner vs expert)
+        # Skill Profiling (beginner vs expert)
         skill = "standard"
         if any(w in text_lower for w in ["how to run", "what is", "beginner", "newbie", "help me learn", "step by step"]):
             skill = "beginner"
@@ -66,14 +97,23 @@ class UserUnderstandingModel:
         else:
             style_guide = "Standard professional communication style."
 
-        if frustration > 0.6:
+        if anger > 0.6:
             style_guide += " Focus on short, precise explanations to resolve issues immediately."
 
         return {
+            "anger": anger,
             "frustration": frustration,
-            "confusion": confusion,
-            "urgency": urgency,
+            "disappointment": disappointment,
+            "curiosity": curiosity,
+            "skepticism": skepticism,
+            "anxiety": anxiety,
+            "gratitude": gratitude,
+            "happiness": happiness,
             "excitement": excitement,
+            "impatience": impatience,
+            "urgency": urgency,
+            "boredom": boredom,
+            "pride": pride,
             "satisfaction": satisfaction,
             "skill_level": skill,
             "style_guide": style_guide
