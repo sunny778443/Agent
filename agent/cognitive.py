@@ -1290,22 +1290,31 @@ class StableTrainingPipeline:
 
 class GenerativeFaceNetwork:
     """
-    Implements a custom, highly modular Variational Autoencoder (VAE) from scratch.
-    Enables unsupervised learning, latent space reparameterization, and decoding
-    of synthetic 8x8 (64-dimensional) facial representation vectors.
+    Implements a custom, mathematically correct Variational Autoencoder (VAE) from scratch.
+    NOTE: This is a toy generative 64-dimensional vector representation model (reconstructing
+    8x8 flattened pixel intensities), NOT a human-scale photographic image generator.
+
+    The loss function L is defined as:
+        L = L_recon + beta * L_kl
+    The gradients are fully backpropagated through the stochastic latent sampling layer
+    using the reparameterization trick:
+        z = mu + exp(0.5 * log_var) * epsilon
     """
     def __init__(self, input_dim: int = 64, latent_dim: int = 2):
         self.input_dim = input_dim
         self.latent_dim = latent_dim
 
-        # Encoder: Projects input images to latent mean and log_variance
+        # Encoder: Projects input to latent mean and log_variance
         self.enc_dense1 = DenseLayer(input_dim, 16, activation="leaky_relu")
         self.enc_mean = DenseLayer(16, latent_dim, activation="identity")
         self.enc_logvar = DenseLayer(16, latent_dim, activation="identity")
 
-        # Decoder: Projects latent samples back to image space
+        # Decoder: Projects latent samples back to input space
         self.dec_dense1 = DenseLayer(latent_dim, 16, activation="leaky_relu")
         self.dec_out = DenseLayer(16, input_dim, activation="sigmoid")
+
+        # Cached stochastic noise epsilon for exact backpropagation
+        self.last_epsilon: list[float] = []
 
     def reparameterize(self, mean: list[float], logvar: list[float], seed: int | None = None) -> list[float]:
         """Applies the VAE reparameterization trick stably: z = mean + std * epsilon"""
@@ -1315,6 +1324,7 @@ class GenerativeFaceNetwork:
         else:
             epsilon = [random.normalvariate(0.0, 1.0) for _ in range(self.latent_dim)]
 
+        self.last_epsilon = list(epsilon)
         z = []
         for i in range(self.latent_dim):
             std = math.exp(0.5 * clip_value(logvar[i], limit=5.0))
@@ -1340,42 +1350,62 @@ class GenerativeFaceNetwork:
 
         return recon_x, mean, logvar
 
-    def train_step(self, x: list[float], lr: float = 0.01) -> float:
+    def train_step(self, x: list[float], lr: float = 0.01, beta: float = 0.1) -> float:
         """
         Runs a single optimization step minimizing reconstruction MSE and KL divergence.
+        Backpropagates gradients correctly through the reparameterized stochastic latent space.
         """
         # Forward Pass
         recon_x, mean, logvar = self.forward(x)
 
-        # 1. Reconstruction Loss gradient (MSE)
-        recon_grads = [p - t for p, t in zip(recon_x, x)]
+        # 1. Reconstruction Loss gradient (MSE): dL/d_recon = 2/D * (recon - x)
+        D = len(recon_x)
+        recon_grads = [2.0 * (p - t) / D for p, t in zip(recon_x, x)]
         recon_grads = clip_gradients(recon_grads, max_norm=1.0)
 
-        # 2. Backpropagate through Decoder
+        # 2. Backpropagate through Decoder to get dL/dz (gradient with respect to latent sample z)
         dh_dec = self.dec_out.backward(recon_grads, lr)
         dh_dec = clip_gradients(dh_dec, max_norm=1.0)
         dz = self.dec_dense1.backward(dh_dec, lr)
         dz = clip_gradients(dz, max_norm=1.0)
 
-        # 3. Compute KL Divergence Loss gradients for encoder layers
-        # dKL/dmean = mean, dKL/dlogvar = 0.5 * (exp(logvar) - 1)
-        mean_grads = [m for m in mean]
-        logvar_grads = [0.5 * (math.exp(clip_value(lv, limit=5.0)) - 1.0) for lv in logvar]
+        # 3. Compute gradients with respect to latent mean (mu) and log-variance (log_var)
+        # By the chain rule of reparameterization:
+        #   z = mu + exp(0.5 * log_var) * eps
+        # Therefore:
+        #   dL_recon/dmu = dL_recon/dz * 1
+        #   dL_recon/dlogvar = dL_recon/dz * 0.5 * exp(0.5 * log_var) * eps
+        # Combining this with analytical KL Divergence gradients:
+        #   dKL/dmu = mu
+        #   dKL/dlogvar = 0.5 * (exp(log_var) - 1)
+        mean_grads = []
+        logvar_grads = []
+        for i in range(self.latent_dim):
+            eps = self.last_epsilon[i]
+            std = math.exp(0.5 * clip_value(logvar[i], limit=5.0))
 
-        # Backpropagate through Encoder
+            d_mu = dz[i] + beta * mean[i]
+            d_logvar = dz[i] * (0.5 * std * eps) + beta * 0.5 * (math.exp(clip_value(logvar[i], limit=5.0)) - 1.0)
+
+            mean_grads.append(d_mu)
+            logvar_grads.append(d_logvar)
+
+        # Backpropagate through mean and logvar Dense projections
+        mean_grads = clip_gradients(mean_grads, max_norm=1.0)
+        logvar_grads = clip_gradients(logvar_grads, max_norm=1.0)
+
         dh_mean = self.enc_mean.backward(mean_grads, lr)
         dh_logvar = self.enc_logvar.backward(logvar_grads, lr)
 
-        # Aggregate encoder gradients
+        # Aggregate encoder hidden layer activations gradient
         dh_enc = vector_add(dh_mean, dh_logvar)
         dh_enc = clip_gradients(dh_enc, max_norm=1.0)
         self.enc_dense1.backward(dh_enc, lr)
 
-        # Total MSE loss for tracking
         return mean_squared_error(recon_x, x)
 
     def generate_face(self, latent_coords: list[float]) -> list[float]:
-        """Decodes custom coordinates in the latent manifold to generate synthetic face files."""
+        """Decodes custom coordinates in the latent manifold to generate synthetic vector outputs."""
         h_dec = self.dec_dense1.forward(latent_coords)
         return self.dec_out.forward(h_dec)
 

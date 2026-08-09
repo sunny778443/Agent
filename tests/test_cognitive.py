@@ -40,6 +40,7 @@ from agent.cognitive import (
 from agent.planner import Planner
 from agent.memory import PersistentMemory
 from agent.user_understanding import UserUnderstandingModel
+from agent.calibration import ConfidenceCalibrator
 
 class TestCognitiveModule(unittest.TestCase):
     def test_basic_linear_algebra(self):
@@ -417,6 +418,30 @@ class TestCognitiveModule(unittest.TestCase):
         # 3. Generate new faces from latent coordinate seeds
         decoded_face = gen_net.generate_face([0.5, -0.5])
         self.assertEqual(len(decoded_face), 64)
+
+    def test_confidence_calibration_metrics(self):
+        """Verifies Brier Score and Expected Calibration Error (ECE) calculations on deterministic arrays."""
+        calibrator = ConfidenceCalibrator(num_bins=5)
+
+        # Test Case 1: Perfectly calibrated model (preds match outcomes)
+        preds_perfect = [0.1, 0.3, 0.5, 0.7, 0.9]
+        outcomes_perfect = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+        brier_perfect = calibrator.compute_brier_score(preds_perfect, outcomes_perfect)
+        ece_perfect = calibrator.compute_expected_calibration_error(preds_perfect, outcomes_perfect)
+
+        self.assertAlmostEqual(brier_perfect, 0.0)
+        self.assertAlmostEqual(ece_perfect, 0.0)
+
+        # Test Case 2: Poorly calibrated model (high confidence on wrong outcomes)
+        preds_poor = [0.9, 0.9, 0.1, 0.1]
+        outcomes_poor = [0.0, 0.0, 1.0, 1.0] # outcome is opposite of prediction
+
+        brier_poor = calibrator.compute_brier_score(preds_poor, outcomes_poor)
+        ece_poor = calibrator.compute_expected_calibration_error(preds_poor, outcomes_poor)
+
+        self.assertGreater(brier_poor, 0.5)
+        self.assertGreater(ece_poor, 0.5)
 
 if __name__ == "__main__":
     unittest.main()

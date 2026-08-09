@@ -1,6 +1,16 @@
-# Autonomous Engineering Agent - Production System
+# Project Karthikeya - Modular AI Engineering Agent Framework
 
-This repository hosts a production-grade, modular, self-repairing autonomous AI agent designed from scratch. The system is split into a robust, secure, AST-driven Python backend engine and an elegant React-based analytics/execution dashboard.
+This repository hosts a modular, self-repairing autonomous AI software engineering agent framework designed from scratch. The system is split into an AST-driven Python backend engine, a persistent SQLite experience memory layer, secure Docker-sandboxed execution scripts, and an elegant React-based telemetry/execution dashboard.
+
+---
+
+## ⚠️ Realistic Technical Bounds & Limitations (Brutally Honest Pass)
+
+Project Karthikeya is built strictly from first principles with zero external machine learning dependencies (no NumPy, PyTorch, or TensorFlow). For educational transparency and engineering precision, please note the following technical constraints:
+1. **Linguistic Emotion-Estimation (NOT human-level AI)**: The `UserUnderstandingModel` is a heuristic regex and word-intersection keyword pattern matching system with negation context logic. It estimates potential user feelings and skill profiles, but does NOT possess genuine emotional intelligence or human-level cognitive understanding.
+2. **Toy Generative Representation (NOT a photographic generator)**: The `GenerativeFaceNetwork` in `agent/cognitive.py` is a toy 64-dimensional Variational Autoencoder (VAE) representing and reconstructing 8x8 flattened pixel intensities. It is designed to demonstrate backpropagation and latent space reparameterization mathematical correctness, and CANNOT render high-resolution photographic images of human faces.
+3. **Deterministic Seed Bounds**: Random state shuffles in the pipeline utilize epoch-based custom RNG inputs (`random.Random(seed + epoch)`) to guarantee determinism, which is independent of global system clocks.
+4. **Computational Metrics**: Confidence calibration and strategies are assessed via the Brier Score and Expected Calibration Error (ECE) algorithms from scratch.
 
 ---
 
@@ -19,6 +29,8 @@ This repository hosts a production-grade, modular, self-repairing autonomous AI 
   - `testing.py`: Automated test skeletons and frameworks runner.
   - `security.py`: Guardrails preventing command injection, secrets leakage, and unsafe code constructs.
   - `static_analysis.py`: Seamless linting with Ruff and MyPy.
+  - `user_understanding.py`: Transparent emotion and skill profiling pipeline.
+  - `calibration.py`: Brier Score and ECE calibration validation engine.
   - `dashboard_api.py`: FastAPI server feeding real-time metrics, logs, and AST states to the dashboard.
 
 - **`dashboard/`**: React + Vite + Tailwind CSS frontend showing trace logging, live system specs, sandbox statuses, and database knowledge cards.
