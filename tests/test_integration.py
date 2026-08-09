@@ -45,7 +45,9 @@ class TestEndToEndIntegration(unittest.TestCase):
         # 2. Planning & Contextual Memory Retrieval
         plan = self.engine.planner.create_execution_plan_with_context(
             task,
-            memory_context="Found 2 matching historical bug-fix profiles."
+            memory_context="Found 2 matching historical bug-fix profiles.",
+            historical_success_rate=0.90,
+            sample_count=3
         )
         self.assertIn("steps", plan)
         self.assertGreaterEqual(plan["confidence_score"], 0.5)

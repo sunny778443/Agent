@@ -118,9 +118,27 @@ Example: src/math.py
             self.log_event("SECURITY_BLOCKED", {"message": prompt_msg})
             return {"status": "blocked", "reason": prompt_msg}
 
+        # --- STRATEGY LEARNING RANKING ---
+        strategy_rankings = self.memory.get_strategy_rankings()
+        strategy_stats = self.memory.get_strategy_statistics()
+        self.log_event("STRATEGY_LEARNING_RANKINGS", {"rankings": strategy_rankings})
+
+        # Decide the reference strategy for planning confidence calibration
+        best_strategy = "NeuralPromptContextualRepair"
+        if strategy_rankings:
+            best_strategy = max(strategy_rankings, key=strategy_rankings.get)
+
+        success_rate = strategy_rankings.get(best_strategy)
+        sample_count = strategy_stats.get(best_strategy, {}).get("attempts", 0)
+
         # 4. Plan Generation & Risk/Confidence Assessment
         self.log_event("TOOL_SELECTION", {"tool": "Planner", "phase": "reasoning"})
-        plan = self.planner.create_execution_plan_with_context(task_description, memory_context=memory_context)
+        plan = self.planner.create_execution_plan_with_context(
+            task_description,
+            memory_context=memory_context,
+            historical_success_rate=success_rate,
+            sample_count=sample_count
+        )
         self.current_plan = plan
 
         # Integrate Cognitive NN prediction to refine the risk assessment score dynamically
@@ -131,11 +149,7 @@ Example: src/math.py
         self.log_event("PLAN_GENERATED", plan)
         self.memory.log_execution(task_description, plan, "In Progress")
 
-        # 5. Tool Selection, Strategy Ranking, & Code Generation
-        # --- STRATEGY LEARNING RANKING ---
-        strategy_rankings = self.memory.get_strategy_rankings()
-        self.log_event("STRATEGY_LEARNING_RANKINGS", {"rankings": strategy_rankings})
-
+        # 5. Tool Selection & Code Generation
         self.log_event("TOOL_SELECTION", {"tool": "RepositoryAnalyzer", "phase": "targeting"})
         target_file = self.determine_target_file(task_description)
         self.log_event("TARGET_IDENTIFIED", {"target_file": target_file})
@@ -260,7 +274,7 @@ Example: src/math.py
             "target_file": target_file,
             "verification_success": success,
             "total_repair_iterations": self.iteration_count,
-            "plan_confidence": plan.get("confidence_score", 0.80),
+            "plan_confidence": plan.get("confidence_score"),
             "duration_seconds": duration,
             "reward_score": reward_score,
             "what_went_well": "Sandbox tests and lint compilations passed cleanly" if success else "Initial code generated, but sandbox checks failed",
@@ -292,7 +306,7 @@ Example: src/math.py
             code_changes=sanitized_code[:500],
             success=success,
             execution_time=duration,
-            confidence=plan.get("confidence_score", 0.80),
+            confidence=plan.get("confidence_score"),
             user_feedback=f"Analyzed emotion={user_profile.get('skill_level')}",
             lessons_learned=reflection["what_should_be_remembered"],
             reward=reward_score,

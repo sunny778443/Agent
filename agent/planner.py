@@ -24,7 +24,7 @@ class Planner:
         """
         return self.create_execution_plan_with_context(task_description, memory_context="")
 
-    def create_execution_plan_with_context(self, task_description: str, memory_context: str = "", historical_success_rate: float | None = None) -> dict[str, Any]:
+    def create_execution_plan_with_context(self, task_description: str, memory_context: str = "", historical_success_rate: float | None = None, sample_count: int = 0) -> dict[str, Any]:
         """
         Generates an execution plan enriched with past memory and heuristics.
         Computes planner confidence scores dynamically based on actual historical success rates
@@ -38,20 +38,27 @@ class Planner:
         elif any(w in task_description.lower() for w in ["add", "new", "create", "implement"]):
             risk_score = 0.3
 
-        # Compute evidence-based confidence
+        # Compute evidence-based confidence metrics
         confidence_score = None
-        confidence_explanation = "Insufficient historical experiences or success rates available to calibrate confidence stably."
+        observed_success_rate = None
+        confidence_source = "None - Insufficient historical observations available to calibrate confidence stably."
+        calculated_sample_count = sample_count
 
         if historical_success_rate is not None:
             confidence_score = round(historical_success_rate, 2)
-            confidence_explanation = f"Confidence calibrated based on actual historical success rate of {historical_success_rate:.2%}"
+            observed_success_rate = round(historical_success_rate, 2)
+            confidence_source = "SQLite Experience Memory Logs"
         elif memory_context and "matching historical" in memory_context:
-            # Estimate from matching experience counts
             try:
+                # Parse matches count directly from context evidence string
                 matches_count = int(memory_context.split("Found ")[1].split()[0])
+                calculated_sample_count = matches_count
                 if matches_count >= 1:
-                    confidence_score = round(min(0.95, 0.60 + 0.10 * matches_count), 2)
-                    confidence_explanation = f"Confidence calculated from {matches_count} matching historical success experiences."
+                    # Let's say we assume a conservative success expectation based purely on the sample density
+                    # but we do NOT fabricate success probabilities out of thin air.
+                    confidence_score = None
+                    observed_success_rate = None
+                    confidence_source = f"Uncalibrated - Found {matches_count} matching task files in memory"
             except Exception:
                 pass
 
@@ -61,7 +68,9 @@ class Planner:
                 "overall_risk_score": risk_score,
                 "risk_assessment": "High risk" if risk_score > 0.6 else ("Medium risk" if risk_score > 0.3 else "Low risk"),
                 "confidence_score": confidence_score,
-                "confidence_explanation": confidence_explanation,
+                "sample_count": calculated_sample_count,
+                "observed_success_rate": observed_success_rate,
+                "confidence_source": confidence_source,
                 "steps": [
                     {"id": 1, "action": "Analyze codebase architecture & file dependencies", "priority": "high", "verify": "Verify AST nodes parsed successfully"},
                     {"id": 2, "action": "Validate security boundaries and safety constraints", "priority": "high", "verify": "Confirm prompt does not violate guardrails"},
@@ -93,7 +102,9 @@ Example output:
                 data = json.loads(raw_res)
 
             data["confidence_score"] = confidence_score
-            data["confidence_explanation"] = confidence_explanation
+            data["sample_count"] = calculated_sample_count
+            data["observed_success_rate"] = observed_success_rate
+            data["confidence_source"] = confidence_source
             return data
         except Exception:
             # Fallback
@@ -101,7 +112,9 @@ Example output:
                 "overall_risk_score": risk_score,
                 "risk_assessment": "Low risk setup",
                 "confidence_score": confidence_score,
-                "confidence_explanation": confidence_explanation,
+                "sample_count": calculated_sample_count,
+                "observed_success_rate": observed_success_rate,
+                "confidence_source": confidence_source,
                 "steps": [
                     {"id": 1, "action": f"Develop code satisfy: {task_description[:50]}", "priority": "high", "verify": "Build successfully"},
                     {"id": 2, "action": "Verify via sandbox", "priority": "high", "verify": "All unit tests pass"}

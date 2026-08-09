@@ -11,7 +11,7 @@ from typing import Any
 class UserUnderstandingModel:
     """
     Implements a transparent linguistic signal processing pipeline:
-        text -> linguistic features -> signal detection -> emotion hypothesis -> confidence -> style recommendation
+        text -> linguistic features -> signal detection -> emotion hypothesis -> signal_strength -> style recommendation
     Correctly handles negation, signal density, and contradictory indicators from scratch.
     """
     def __init__(self) -> None:
@@ -76,7 +76,7 @@ class UserUnderstandingModel:
     def profile_user_request(self, text: str) -> dict[str, Any]:
         """
         Runs the complete, transparent linguistic pipeline.
-        Returns estimated emotion probabilities, active evidence, confidence, and aliases metadata.
+        Returns estimated emotion probabilities, active evidence, signal_strength, and aliases metadata.
         """
         import math
 
@@ -116,8 +116,8 @@ class UserUnderstandingModel:
             satisfaction = 0.2
         emotions["satisfaction"] = satisfaction
 
-        # 5. Confidence Calibration
-        # Confidence is high if signals are consistent, and penalized if contradictory
+        # 5. Confidence Calibration -> Renamed to Signal Strength
+        # Matches the intensity and volume of linguistic patterns identified
         active_categories = [cat for cat in active_signals if active_signals[cat]]
         num_signals = sum(len(active_signals[cat]) for cat in active_signals)
 
@@ -127,11 +127,11 @@ class UserUnderstandingModel:
         if "anger" in active_categories and "gratitude" in active_categories:
             contradiction_penalty = 0.4
 
-        confidence = 0.5
+        strength = 0.5
         if num_signals > 0:
-            confidence = min(0.99, max(0.1, 0.6 + 0.1 * num_signals - contradiction_penalty))
+            strength = min(0.99, max(0.1, 0.6 + 0.1 * num_signals - contradiction_penalty))
         else:
-            confidence = 0.50 # baseline neutral confidence
+            strength = 0.50 # baseline neutral signal strength
 
         # 6. Skill Profiling (beginner vs expert)
         text_lower = text.lower()
@@ -156,7 +156,7 @@ class UserUnderstandingModel:
         result = {
             "skill_level": skill,
             "style_guide": recommendation,
-            "confidence": round(confidence, 2),
+            "signal_strength": round(strength, 2),
             "evidence": evidence,
             "dominant_emotion": max(emotions, key=emotions.get) if num_signals > 0 else "neutral",
             "emotion_aliases_metadata": self.emotion_aliases
