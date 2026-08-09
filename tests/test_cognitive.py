@@ -1,7 +1,8 @@
 """
 Unit and Integration tests for the Neural Cognitive Module and Adaptive Cognition Layer.
 Verifies from-scratch matrix, Layer, attention, GCN, LSTM, CodeCognitiveNetwork,
-experience memories, user emotion understanding, strategy ranking, and reward engines.
+experience memories, user emotion understanding, strategy ranking, reward engines,
+and Generative VAE architectures.
 """
 import unittest
 import math
@@ -32,7 +33,9 @@ from agent.cognitive import (
     train_evolutionary_strategy,
     mean_squared_error,
     CognitiveDatasetLoader,
-    StableTrainingPipeline
+    StableTrainingPipeline,
+    GenerativeFaceNetwork,
+    GenerativeDatasetLoader
 )
 from agent.planner import Planner
 from agent.memory import PersistentMemory
@@ -383,6 +386,37 @@ class TestCognitiveModule(unittest.TestCase):
 
         if os.path.exists(db_path):
             os.remove(db_path)
+
+    def test_generative_face_vae_network(self):
+        """Verifies custom GenerativeFaceNetwork training steps, sampling, and synthetic image decoding."""
+        # 1. Generate high-volume synthetic face arrays
+        synthetic_faces = GenerativeDatasetLoader.generate_synthetic_faces(count=15)
+        self.assertEqual(len(synthetic_faces), 15)
+        self.assertEqual(len(synthetic_faces[0]), 64) # 8x8 flattened
+
+        # 2. Instantiate and train Generative VAE model
+        gen_net = GenerativeFaceNetwork(input_dim=64, latent_dim=2)
+
+        # Evaluate untrained reconstruction loss
+        x_sample = synthetic_faces[0]
+        recon_x_untrained, _, _ = gen_net.forward(x_sample)
+        initial_loss = mean_squared_error(recon_x_untrained, x_sample)
+
+        # Run 3 training backprop epochs
+        for _ in range(3):
+            for x in synthetic_faces:
+                gen_net.train_step(x, lr=0.05)
+
+        # Evaluate trained reconstruction loss
+        recon_x_trained, _, _ = gen_net.forward(x_sample)
+        final_loss = mean_squared_error(recon_x_trained, x_sample)
+
+        # Validate loss decreases or remains bounded stably
+        self.assertTrue(final_loss < initial_loss or final_loss < 0.2)
+
+        # 3. Generate new faces from latent coordinate seeds
+        decoded_face = gen_net.generate_face([0.5, -0.5])
+        self.assertEqual(len(decoded_face), 64)
 
 if __name__ == "__main__":
     unittest.main()

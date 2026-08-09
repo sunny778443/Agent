@@ -1282,3 +1282,130 @@ class StableTrainingPipeline:
             "best_val_loss": best_val_loss,
             "history": self.metrics_history
         }
+
+
+# =====================================================================
+# PART 14: FROM-SCRATCH GENERATIVE FACE NETWORK (VAE / GAN CORE)
+# =====================================================================
+
+class GenerativeFaceNetwork:
+    """
+    Implements a custom, highly modular Variational Autoencoder (VAE) from scratch.
+    Enables unsupervised learning, latent space reparameterization, and decoding
+    of synthetic 8x8 (64-dimensional) facial representation vectors.
+    """
+    def __init__(self, input_dim: int = 64, latent_dim: int = 2):
+        self.input_dim = input_dim
+        self.latent_dim = latent_dim
+
+        # Encoder: Projects input images to latent mean and log_variance
+        self.enc_dense1 = DenseLayer(input_dim, 16, activation="leaky_relu")
+        self.enc_mean = DenseLayer(16, latent_dim, activation="identity")
+        self.enc_logvar = DenseLayer(16, latent_dim, activation="identity")
+
+        # Decoder: Projects latent samples back to image space
+        self.dec_dense1 = DenseLayer(latent_dim, 16, activation="leaky_relu")
+        self.dec_out = DenseLayer(16, input_dim, activation="sigmoid")
+
+    def reparameterize(self, mean: list[float], logvar: list[float], seed: int | None = None) -> list[float]:
+        """Applies the VAE reparameterization trick stably: z = mean + std * epsilon"""
+        if seed is not None:
+            rng = random.Random(seed)
+            epsilon = [rng.normalvariate(0.0, 1.0) for _ in range(self.latent_dim)]
+        else:
+            epsilon = [random.normalvariate(0.0, 1.0) for _ in range(self.latent_dim)]
+
+        z = []
+        for i in range(self.latent_dim):
+            std = math.exp(0.5 * clip_value(logvar[i], limit=5.0))
+            z.append(mean[i] + std * epsilon[i])
+        return z
+
+    def forward(self, x: list[float], seed: int | None = None) -> tuple[list[float], list[float], list[float]]:
+        """
+        Runs the complete generative encoder-decoder forward pass.
+        Returns: (reconstructed_x, latent_mean, latent_logvar)
+        """
+        # 1. Encode
+        h_enc = self.enc_dense1.forward(x)
+        mean = self.enc_mean.forward(h_enc)
+        logvar = self.enc_logvar.forward(h_enc)
+
+        # 2. Sample from latent space
+        z = self.reparameterize(mean, logvar, seed=seed)
+
+        # 3. Decode
+        h_dec = self.dec_dense1.forward(z)
+        recon_x = self.dec_out.forward(h_dec)
+
+        return recon_x, mean, logvar
+
+    def train_step(self, x: list[float], lr: float = 0.01) -> float:
+        """
+        Runs a single optimization step minimizing reconstruction MSE and KL divergence.
+        """
+        # Forward Pass
+        recon_x, mean, logvar = self.forward(x)
+
+        # 1. Reconstruction Loss gradient (MSE)
+        recon_grads = [p - t for p, t in zip(recon_x, x)]
+        recon_grads = clip_gradients(recon_grads, max_norm=1.0)
+
+        # 2. Backpropagate through Decoder
+        dh_dec = self.dec_out.backward(recon_grads, lr)
+        dh_dec = clip_gradients(dh_dec, max_norm=1.0)
+        dz = self.dec_dense1.backward(dh_dec, lr)
+        dz = clip_gradients(dz, max_norm=1.0)
+
+        # 3. Compute KL Divergence Loss gradients for encoder layers
+        # dKL/dmean = mean, dKL/dlogvar = 0.5 * (exp(logvar) - 1)
+        mean_grads = [m for m in mean]
+        logvar_grads = [0.5 * (math.exp(clip_value(lv, limit=5.0)) - 1.0) for lv in logvar]
+
+        # Backpropagate through Encoder
+        dh_mean = self.enc_mean.backward(mean_grads, lr)
+        dh_logvar = self.enc_logvar.backward(logvar_grads, lr)
+
+        # Aggregate encoder gradients
+        dh_enc = vector_add(dh_mean, dh_logvar)
+        dh_enc = clip_gradients(dh_enc, max_norm=1.0)
+        self.enc_dense1.backward(dh_enc, lr)
+
+        # Total MSE loss for tracking
+        return mean_squared_error(recon_x, x)
+
+    def generate_face(self, latent_coords: list[float]) -> list[float]:
+        """Decodes custom coordinates in the latent manifold to generate synthetic face files."""
+        h_dec = self.dec_dense1.forward(latent_coords)
+        return self.dec_out.forward(h_dec)
+
+
+class GenerativeDatasetLoader:
+    """
+    Helper class to load or generate high-volume image pixel datasets stably.
+    """
+    @staticmethod
+    def generate_synthetic_faces(count: int = 5000, seed: int = 42) -> list[list[float]]:
+        """
+        Generates counts of synthetic 8x8 flattened facial matrices with localized
+        pixel intensities representing eyes, nose, and mouth layouts stably.
+        """
+        rng = random.Random(seed)
+        dataset = []
+        for _ in range(count):
+            # Create a base blank face profile
+            face = [0.1] * 64
+
+            # Draw eyes (row 2, cols 2 & 5)
+            face[2 * 8 + 2] = rng.uniform(0.7, 0.9)
+            face[2 * 8 + 5] = rng.uniform(0.7, 0.9)
+
+            # Draw nose (row 4, col 4)
+            face[4 * 8 + 4] = rng.uniform(0.6, 0.8)
+
+            # Draw mouth (row 6, cols 2 to 5)
+            for c in range(2, 6):
+                face[6 * 8 + c] = rng.uniform(0.5, 0.8)
+
+            dataset.append(face)
+        return dataset
