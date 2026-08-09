@@ -226,8 +226,8 @@ Example: src/math.py
 
             # --- DECIDE OPTIMAL STRATEGY before acting ---
             # Prefer FastLinterAutoFix if it's purely formatting and has higher historical success rate
-            linter_success_rate = strategy_rankings.get("FastLinterAutoFix", 0.92)
-            neural_success_rate = strategy_rankings.get("NeuralPromptContextualRepair", 0.51)
+            linter_success_rate = strategy_rankings.get("FastLinterAutoFix", 0.5)
+            neural_success_rate = strategy_rankings.get("NeuralPromptContextualRepair", 0.5)
 
             if not lint_success and type_success and test_success and linter_success_rate > neural_success_rate:
                 # STRATEGY A: Fast local ruff check --fix

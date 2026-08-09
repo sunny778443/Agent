@@ -1,13 +1,10 @@
 """
 User Understanding, Emotion-Estimation, and Skill Profiling module.
-Estimates the likelihood of different human emotional states (Anger, Frustration,
-Disappointment, Curiosity, Skepticism, Anxiety, Gratitude, Happiness, Excitement,
-Impatience, Urgency, Boredom, Pride, and Satisfaction) and skill levels.
-NOTE: This is a heuristic linguistic emotion-estimation system, NOT true human-level
-affective or cognitive emotion understanding.
+Estimates the likelihood of different human emotional states and skill levels.
+NOTE: This is a heuristic linguistic emotion-estimation system based on keyword pattern matching,
+NOT true human-level affective or cognitive emotion understanding.
 """
 import re
-import math
 from typing import Any
 
 
@@ -18,8 +15,8 @@ class UserUnderstandingModel:
     Correctly handles negation, signal density, and contradictory indicators from scratch.
     """
     def __init__(self) -> None:
-        # Define signal dictionary with keywords
-        self.signals = {
+        # Define primary independent emotional signal keywords
+        self.primary_signals = {
             "anger": ["fail", "error", "broken", "stop", "stupid", "wrong", "blank", "unusable", "hate", "bad", "angry", "furious"],
             "disappointment": ["sad", "unfortunate", "pity", "disappointed", "regret", "alas", "disappointment"],
             "curiosity": ["why", "how", "what", "where", "explain", "learn", "wonder", "curious"],
@@ -33,6 +30,13 @@ class UserUnderstandingModel:
         }
         self.negation_words = {"not", "never", "no", "dont", "cannot", "wont", "neither", "nor"}
 
+        # Explicit linguistic emotion aliases
+        self.emotion_aliases = {
+            "frustration": "anger",
+            "excitement": "happiness",
+            "urgency": "impatience"
+        }
+
     def tokenize_and_clean(self, text: str) -> list[str]:
         """Cleans and splits input string into standard alphabetic tokens."""
         cleaned = re.sub(r'[^a-zA-Z\s]', '', text.lower())
@@ -44,12 +48,12 @@ class UserUnderstandingModel:
         negated by preceding negation tokens within a window of 2 words.
         """
         tokens = self.tokenize_and_clean(text)
-        detected_signals: dict[str, list[str]] = {category: [] for category in self.signals}
-        negated_signals: dict[str, list[str]] = {category: [] for category in self.signals}
+        detected_signals: dict[str, list[str]] = {category: [] for category in self.primary_signals}
+        negated_signals: dict[str, list[str]] = {category: [] for category in self.primary_signals}
 
         for idx, token in enumerate(tokens):
             # Check which category this token belongs to
-            for category, keywords in self.signals.items():
+            for category, keywords in self.primary_signals.items():
                 if token in keywords:
                     # Check previous 2 words for negation tokens
                     is_negated = False
@@ -72,8 +76,10 @@ class UserUnderstandingModel:
     def profile_user_request(self, text: str) -> dict[str, Any]:
         """
         Runs the complete, transparent linguistic pipeline.
-        Returns estimated emotion probabilities, active evidence, and confidence.
+        Returns estimated emotion probabilities, active evidence, confidence, and aliases metadata.
         """
+        import math
+
         # 1. Feature Extraction & Signal Detection
         signal_maps = self.detect_negated_signals(text)
         active_signals = signal_maps["active"]
@@ -82,7 +88,7 @@ class UserUnderstandingModel:
         # 2. Emotion Hypothesis Scoring
         emotions = {}
         evidence = []
-        for category in self.signals:
+        for category in self.primary_signals:
             base_score = 0.05
             active_hits = active_signals[category]
             negated_hits = negated_signals[category]
@@ -98,12 +104,11 @@ class UserUnderstandingModel:
 
             emotions[category] = base_score
 
-        # Map aliases for backward compatibility
-        emotions["frustration"] = emotions["anger"]
-        emotions["excitement"] = emotions["happiness"]
-        emotions["urgency"] = emotions["impatience"]
+        # 3. Explicitly map aliases in the output metadata
+        for alias, primary in self.emotion_aliases.items():
+            emotions[alias] = emotions[primary]
 
-        # 3. Overall Satisfaction scoring
+        # 4. Overall Satisfaction scoring
         satisfaction = 0.5
         if emotions["happiness"] > 0.5 or emotions["gratitude"] > 0.5:
             satisfaction = 0.9
@@ -111,9 +116,8 @@ class UserUnderstandingModel:
             satisfaction = 0.2
         emotions["satisfaction"] = satisfaction
 
-        # 4. Confidence Calibration
+        # 5. Confidence Calibration
         # Confidence is high if signals are consistent, and penalized if contradictory
-        # (e.g. active anger and active happiness together indicates confusion/ambiguity)
         active_categories = [cat for cat in active_signals if active_signals[cat]]
         num_signals = sum(len(active_signals[cat]) for cat in active_signals)
 
@@ -129,7 +133,7 @@ class UserUnderstandingModel:
         else:
             confidence = 0.50 # baseline neutral confidence
 
-        # 5. Skill Profiling (beginner vs expert)
+        # 6. Skill Profiling (beginner vs expert)
         text_lower = text.lower()
         skill = "standard"
         if any(w in text_lower for w in ["how to run", "what is", "beginner", "newbie", "help me learn", "step by step"]):
@@ -137,7 +141,7 @@ class UserUnderstandingModel:
         elif any(w in text_lower for w in ["ast", "gnn", "backprop", "gitpython", "refactor", "complexity", "optimization", "neural", "embeddings"]):
             skill = "expert"
 
-        # 6. Communication Recommendation Formulation
+        # 7. Communication Recommendation Formulation
         if skill == "beginner":
             recommendation = "Provide detailed step-by-step guidance and explain basic programming terms carefully."
         elif skill == "expert":
@@ -154,7 +158,8 @@ class UserUnderstandingModel:
             "style_guide": recommendation,
             "confidence": round(confidence, 2),
             "evidence": evidence,
-            "dominant_emotion": max(emotions, key=emotions.get) if num_signals > 0 else "neutral"
+            "dominant_emotion": max(emotions, key=emotions.get) if num_signals > 0 else "neutral",
+            "emotion_aliases_metadata": self.emotion_aliases
         }
         # Merge all emotion scores in
         result.update(emotions)

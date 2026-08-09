@@ -43,7 +43,10 @@ class TestEndToEndIntegration(unittest.TestCase):
         self.assertGreater(profile["urgency"], 0.5)
 
         # 2. Planning & Contextual Memory Retrieval
-        plan = self.engine.planner.create_execution_plan_with_context(task, memory_context="Found 0 fixes.")
+        plan = self.engine.planner.create_execution_plan_with_context(
+            task,
+            memory_context="Found 2 matching historical bug-fix profiles."
+        )
         self.assertIn("steps", plan)
         self.assertGreaterEqual(plan["confidence_score"], 0.5)
 

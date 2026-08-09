@@ -163,7 +163,7 @@ class PersistentMemory:
         code_changes: str,
         success: bool,
         execution_time: float,
-        confidence: float,
+        confidence: float | None,
         user_feedback: str,
         lessons_learned: str,
         reward: float,
@@ -196,27 +196,79 @@ class PersistentMemory:
             )
             conn.commit()
 
-    def get_strategy_rankings(self) -> dict[str, float]:
+    def get_strategy_statistics(self) -> dict[str, dict[str, Any]]:
         """
-        Computes the success rates of different agent execution strategies
-        by querying historical Experience Memory records.
+        Calculates true statistical metrics for each execution strategy
+        based purely on actual historical observations in SQLite experience logs.
         """
-        rankings = {"FastLinterAutoFix": 0.92, "NeuralPromptContextualRepair": 0.51}
+        stats = {}
+        known_strategies = ["FastLinterAutoFix", "NeuralPromptContextualRepair"]
+        for strat in known_strategies:
+            stats[strat] = {
+                "attempts": 0,
+                "successes": 0,
+                "failures": 0,
+                "success_rate": None,
+                "mean_reward": None,
+                "variance": None,
+                "status": "insufficient_data"
+            }
+
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT tools_used, AVG(success) as success_rate FROM experience_memory GROUP BY tools_used"
-                )
+                cursor.execute("SELECT tools_used, success, reward FROM experience_memory")
                 rows = cursor.fetchall()
+
+                grouped: dict[str, list[dict[str, Any]]] = {}
                 for r in rows:
                     strat = r["tools_used"]
-                    rate = r["success_rate"]
-                    if strat and rate is not None:
-                        rankings[strat] = float(rate)
+                    if not strat:
+                        continue
+                    if strat not in grouped:
+                        grouped[strat] = []
+                    grouped[strat].append({
+                        "success": bool(r["success"]),
+                        "reward": float(r["reward"])
+                    })
+
+                for strat, items in grouped.items():
+                    attempts = len(items)
+                    successes = sum(1 for item in items if item["success"])
+                    failures = attempts - successes
+                    success_rate = successes / attempts if attempts > 0 else 0.0
+                    rewards = [item["reward"] for item in items]
+                    mean_reward = sum(rewards) / attempts if attempts > 0 else 0.0
+
+                    variance = 0.0
+                    if attempts > 1:
+                        variance = sum((r - mean_reward) ** 2 for r in rewards) / (attempts - 1)
+
+                    stats[strat] = {
+                        "attempts": attempts,
+                        "successes": successes,
+                        "failures": failures,
+                        "success_rate": round(success_rate, 4),
+                        "mean_reward": round(mean_reward, 4),
+                        "variance": round(variance, 4),
+                        "status": "calibrated" if attempts >= 3 else "insufficient_data"
+                    }
         except Exception:
             pass
+
+        return stats
+
+    def get_strategy_rankings(self) -> dict[str, float]:
+        """
+        Returns a simplified map of strategy names to their actual success rates.
+        Returns empty dictionary if there is insufficient calibrated data.
+        """
+        stats = self.get_strategy_statistics()
+        rankings = {}
+        for strat, s in stats.items():
+            if s["status"] == "calibrated" and s["success_rate"] is not None:
+                rankings[strat] = s["success_rate"]
         return rankings
 
     def search_experiences_semantically(self, query_embedding: list[float], limit: int = 5) -> list[dict[str, Any]]:

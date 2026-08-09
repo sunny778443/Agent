@@ -1,6 +1,7 @@
 """
 Plan Creator and Analyzer module.
-Performs risk estimations, designs step-by-step executions, and sets priority tasks.
+Performs risk estimations, designs step-by-step executions, and sets priority tasks
+with evidence-based confidence score calibration.
 """
 import json
 from typing import Any
@@ -23,31 +24,44 @@ class Planner:
         """
         return self.create_execution_plan_with_context(task_description, memory_context="")
 
-    def create_execution_plan_with_context(self, task_description: str, memory_context: str = "") -> dict[str, Any]:
+    def create_execution_plan_with_context(self, task_description: str, memory_context: str = "", historical_success_rate: float | None = None) -> dict[str, Any]:
         """
         Generates an execution plan enriched with past memory and heuristics.
-        Includes a confidence score and intermediate verification steps.
+        Computes planner confidence scores dynamically based on actual historical success rates
+        and retrieved experiences, or returns None if evidence is insufficient.
         """
+        risk_score = 0.1
+        if any(w in task_description.lower() for w in ["delete", "remove", "clean", "destroy"]):
+            risk_score = 0.8
+        elif any(w in task_description.lower() for w in ["refactor", "rewrite", "replace"]):
+            risk_score = 0.5
+        elif any(w in task_description.lower() for w in ["add", "new", "create", "implement"]):
+            risk_score = 0.3
+
+        # Compute evidence-based confidence
+        confidence_score = None
+        confidence_explanation = "Insufficient historical experiences or success rates available to calibrate confidence stably."
+
+        if historical_success_rate is not None:
+            confidence_score = round(historical_success_rate, 2)
+            confidence_explanation = f"Confidence calibrated based on actual historical success rate of {historical_success_rate:.2%}"
+        elif memory_context and "matching historical" in memory_context:
+            # Estimate from matching experience counts
+            try:
+                matches_count = int(memory_context.split("Found ")[1].split()[0])
+                if matches_count >= 1:
+                    confidence_score = round(min(0.95, 0.60 + 0.10 * matches_count), 2)
+                    confidence_explanation = f"Confidence calculated from {matches_count} matching historical success experiences."
+            except Exception:
+                pass
+
         if self.llm.provider == "mock":
-            # Direct calculation for tests or mock mode
-            risk_score = 0.1
-            if any(w in task_description.lower() for w in ["delete", "remove", "clean", "destroy"]):
-                risk_score = 0.8
-            elif any(w in task_description.lower() for w in ["refactor", "rewrite", "replace"]):
-                risk_score = 0.5
-            elif any(w in task_description.lower() for w in ["add", "new", "create", "implement"]):
-                risk_score = 0.3
-
-            # Calculate a confidence score
-            confidence = 0.95 if memory_context else 0.85
-            if risk_score > 0.6:
-                confidence -= 0.15
-
             return {
                 "task": task_description,
                 "overall_risk_score": risk_score,
                 "risk_assessment": "High risk" if risk_score > 0.6 else ("Medium risk" if risk_score > 0.3 else "Low risk"),
-                "confidence_score": round(confidence, 2),
+                "confidence_score": confidence_score,
+                "confidence_explanation": confidence_explanation,
                 "steps": [
                     {"id": 1, "action": "Analyze codebase architecture & file dependencies", "priority": "high", "verify": "Verify AST nodes parsed successfully"},
                     {"id": 2, "action": "Validate security boundaries and safety constraints", "priority": "high", "verify": "Confirm prompt does not violate guardrails"},
@@ -64,11 +78,10 @@ Historical Memory Context: "{memory_context}"
 Provide response as a raw JSON dictionary with:
 1. "overall_risk_score": (float between 0.0 and 1.0)
 2. "risk_assessment": (string explanation of risks)
-3. "confidence_score": (float between 0.0 and 1.0 representing our planning confidence based on task complexity and memory)
-4. "steps": (list of dicts containing "id", "action", "priority" (high/medium/low), and "verify" (string self-verification check) keys)
+3. "steps": (list of dicts containing "id", "action", "priority" (high/medium/low), and "verify" (string self-verification check) keys)
 
 Example output:
-{{"overall_risk_score": 0.4, "risk_assessment": "Moderate Risk", "confidence_score": 0.85, "steps": [{{"id": 1, "action": "Implement logic", "priority": "high", "verify": "Check test success"}}]}}
+{{"overall_risk_score": 0.4, "risk_assessment": "Moderate Risk", "steps": [{{"id": 1, "action": "Implement logic", "priority": "high", "verify": "Check test success"}}]}}
 """
         raw_res = self.llm.generate(prompt)
         try:
@@ -79,15 +92,16 @@ Example output:
             else:
                 data = json.loads(raw_res)
 
-            if "confidence_score" not in data:
-                data["confidence_score"] = 0.80 if memory_context else 0.70
+            data["confidence_score"] = confidence_score
+            data["confidence_explanation"] = confidence_explanation
             return data
         except Exception:
             # Fallback
             return {
-                "overall_risk_score": 0.3,
+                "overall_risk_score": risk_score,
                 "risk_assessment": "Low risk setup",
-                "confidence_score": 0.75,
+                "confidence_score": confidence_score,
+                "confidence_explanation": confidence_explanation,
                 "steps": [
                     {"id": 1, "action": f"Develop code satisfy: {task_description[:50]}", "priority": "high", "verify": "Build successfully"},
                     {"id": 2, "action": "Verify via sandbox", "priority": "high", "verify": "All unit tests pass"}
