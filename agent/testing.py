@@ -3,11 +3,10 @@ Automatic Test generator and runner.
 Supports running pytest, unittest, vitest, and jest inside sandboxes.
 Generates test cases focusing on edge cases, regressions, and integration coverage.
 """
+import ast
 import os
 import subprocess
 from typing import Any
-
-from agent.sandbox import SandboxRunner
 
 
 class AutomatedTester:
@@ -17,6 +16,8 @@ class AutomatedTester:
     """
     def __init__(self, root_dir: str):
         self.root_dir = root_dir
+        # Lazy import to avoid circular dependency
+        from agent.sandbox import SandboxRunner
         self.sandbox = SandboxRunner()
 
     def run_tests_locally(self, framework: str = "pytest", path: str = "tests/") -> dict[str, Any]:
@@ -27,7 +28,8 @@ class AutomatedTester:
                     ["python", "-m", "pytest", path, "-v"],
                     capture_output=True,
                     text=True,
-                    cwd=self.root_dir
+                    cwd=self.root_dir,
+                    check=False
                 )
                 return {
                     "success": res.returncode == 0,
@@ -35,7 +37,7 @@ class AutomatedTester:
                     "stderr": res.stderr,
                     "exit_code": res.returncode
                 }
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 return {"success": False, "stdout": "", "stderr": str(e), "exit_code": -1}
         elif framework == "unittest":
             try:
@@ -43,7 +45,8 @@ class AutomatedTester:
                     ["python", "-m", "unittest", "discover", "-s", path],
                     capture_output=True,
                     text=True,
-                    cwd=self.root_dir
+                    cwd=self.root_dir,
+                    check=False
                 )
                 return {
                     "success": res.returncode == 0,
@@ -51,7 +54,7 @@ class AutomatedTester:
                     "stderr": res.stderr,
                     "exit_code": res.returncode
                 }
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 return {"success": False, "stdout": "", "stderr": str(e), "exit_code": -1}
 
         return {"success": False, "stdout": "", "stderr": f"Framework {framework} is not fully supported locally.", "exit_code": -1}
@@ -66,7 +69,6 @@ class AutomatedTester:
         Creates basic pytest test skeletons automatically based on simple AST examination
         or structural hints of the code.
         """
-        import ast
         basename = os.path.basename(target_filepath).replace(".py", "")
         test_filename = f"test_{basename}.py"
         test_filepath = os.path.join(self.root_dir, tests_dir, test_filename)
@@ -78,10 +80,9 @@ class AutomatedTester:
         try:
             tree = ast.parse(code_content)
             for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
-                    if not node.name.startswith("_"):
-                        test_cases.append(node.name)
-        except Exception:
+                if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+                    test_cases.append(node.name)
+        except SyntaxError:
             pass
 
         content_lines = [
@@ -90,7 +91,6 @@ class AutomatedTester:
             ""
         ]
 
-        # Standard import resolution guess
         module_path = target_filepath.replace(".py", "").replace("/", ".").replace("\\", ".")
         content_lines.append(f"# Target Import: from {module_path} import ...")
 

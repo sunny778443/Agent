@@ -14,6 +14,7 @@ import time
 import unittest
 from typing import Any, Dict, List, Tuple
 
+from agent.calibration import ConfidenceCalibrator
 from agent.memory import PersistentMemory
 from agent.repair import SelfRepairEngine
 
@@ -49,10 +50,8 @@ class TestSelfRepairEngineBenchmark(unittest.TestCase):
         self.db_path = os.path.join(self.temp_root, "benchmark_repair_memory.db")
         self.memory = PersistentMemory(self.db_path)
         self.repair_engine = SelfRepairEngine(memory=self.memory, llm=None)
+        self.calibrator = ConfidenceCalibrator()
 
-        # Generate exactly 30 deterministic broken software repository tasks
-        # 20 Experience Tasks (for online learning/memory strategy recording)
-        # 10 Unseen Evaluation Tasks (never seen or recorded prior to evaluation)
         self.tasks: List[RepairTaskSpec] = []
 
         categories = [
@@ -130,14 +129,6 @@ class TestSelfRepairEngineBenchmark(unittest.TestCase):
 
         return repo_dir
 
-    def calculate_ci(self, success_rate: float, n: int) -> Tuple[float, float]:
-        """Calculates 95% Wald confidence interval from scratch."""
-        if n == 0:
-            return 0.0, 0.0
-        se = math.sqrt((success_rate * (1.0 - success_rate)) / n)
-        margin = 1.96 * se
-        return max(0.0, success_rate - margin), min(1.0, success_rate + margin)
-
     def test_run_30_task_self_repair_benchmark(self) -> None:
         """
         Executes actual self-repair across all 30 broken repositories:
@@ -145,7 +136,6 @@ class TestSelfRepairEngineBenchmark(unittest.TestCase):
         - Karthikeya Offline Self-Repair Engine (No Memory context)
         - Karthikeya Offline Self-Repair Engine (With Memory context)
         """
-        # Phase 1: Train/Experience Seeding on the 20 experience tasks
         exp_tasks = [t for t in self.tasks if not t.is_unseen_eval]
         unseen_eval_tasks = [t for t in self.tasks if t.is_unseen_eval]
 
@@ -156,7 +146,6 @@ class TestSelfRepairEngineBenchmark(unittest.TestCase):
         baseline_passed = 0
         for task in unseen_eval_tasks:
             repo_dir = self.create_broken_repo(task, "baseline")
-            # Baseline does nothing: run tests as is
             pass_test, _, _ = self.repair_engine.run_tests(repo_dir)
             if pass_test:
                 baseline_passed += 1
@@ -202,33 +191,31 @@ class TestSelfRepairEngineBenchmark(unittest.TestCase):
         first_attempt_rate = first_attempt_successes / n_eval
         avg_attempts = total_attempts / n_eval
 
-        # Print Benchmark Report
         print("\n======================================================================")
         print("PROJECT KARTHIKEYA: DETERMINISTIC SELF-REPAIR ENGINE BENCHMARK REPORT")
         print("======================================================================")
         print(f"Total Benchmark Tasks: 30 (20 Experience Seeding, 10 Unseen Evaluation Set)")
         print(f"Runtime Environment: Python {sys.version.split()[0]} | OS: {sys.platform}")
 
+        ci_b_low, ci_b_high = self.calibrator.calculate_wilson_score_interval(baseline_passed, n_eval)
         print("\n1. Baseline (No Self-Repair System):")
         print(f"   - Tasks Attempted: {n_eval}")
         print(f"   - Tasks Repaired: {baseline_passed}")
         print(f"   - Success Rate: {base_rate:.2%}")
-        ci_b_low, ci_b_high = self.calculate_ci(base_rate, n_eval)
-        print(f"   - 95% Confidence Interval: [{ci_b_low:.2%}, {ci_b_high:.2%}]")
+        print(f"   - 95% Wilson Score Interval: [{ci_b_low:.2%}, {ci_b_high:.2%}]")
 
+        ci_k_low, ci_k_high = self.calibrator.calculate_wilson_score_interval(karthikeya_passed, n_eval)
         print("\n2. Karthikeya Self-Repair Engine (Unseen Evaluation Set):")
         print(f"   - Tasks Attempted: {n_eval}")
         print(f"   - Tasks Successfully Repaired: {karthikeya_passed}")
         print(f"   - Tasks Failed (Rolled Back): {rollback_count}")
         print(f"   - Eventual Success Rate: {karth_rate:.2%}")
-        ci_k_low, ci_k_high = self.calculate_ci(karth_rate, n_eval)
-        print(f"   - 95% Confidence Interval: [{ci_k_low:.2%}, {ci_k_high:.2%}]")
+        print(f"   - 95% Wilson Score Interval: [{ci_k_low:.2%}, {ci_k_high:.2%}]")
         print(f"   - First-Attempt Success Rate: {first_attempt_rate:.2%}")
         print(f"   - Average Repair Attempts per Task: {avg_attempts:.2f}")
         print(f"   - Total Rollback Count: {rollback_count}")
         print("======================================================================\n")
 
-        # Assertions
         self.assertEqual(baseline_passed, 2)
         self.assertEqual(karthikeya_passed, 5)
         self.assertEqual(rollback_count, 5)

@@ -28,7 +28,8 @@ class StaticAnalyzer:
                 ["ruff", "check", filepath],
                 capture_output=True,
                 text=True,
-                cwd=self.root_dir
+                cwd=self.root_dir,
+                check=False
             )
             return {
                 "success": res.returncode == 0,
@@ -36,7 +37,7 @@ class StaticAnalyzer:
                 "stderr": res.stderr,
                 "errors": [] if res.returncode == 0 else [res.stdout + res.stderr]
             }
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             return {"success": False, "errors": [str(e)]}
 
     def run_mypy(self, filepath: str) -> dict[str, Any]:
@@ -50,7 +51,8 @@ class StaticAnalyzer:
                 ["mypy", filepath, "--ignore-missing-imports"],
                 capture_output=True,
                 text=True,
-                cwd=self.root_dir
+                cwd=self.root_dir,
+                check=False
             )
             return {
                 "success": res.returncode == 0,
@@ -58,7 +60,7 @@ class StaticAnalyzer:
                 "stderr": res.stderr,
                 "errors": [] if res.returncode == 0 else [res.stdout + res.stderr]
             }
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             return {"success": False, "errors": [str(e)]}
 
     def repair_lint_issues(self, filepath: str, linter: str = "ruff") -> dict[str, Any]:
@@ -68,14 +70,20 @@ class StaticAnalyzer:
         if linter == "ruff":
             try:
                 # Format
-                subprocess.run(["ruff", "format", filepath], cwd=self.root_dir)
+                subprocess.run(["ruff", "format", filepath], cwd=self.root_dir, check=False)
                 # Fix lints
-                res = subprocess.run(["ruff", "check", "--fix", filepath], capture_output=True, text=True, cwd=self.root_dir)
+                res = subprocess.run(
+                    ["ruff", "check", "--fix", filepath],
+                    capture_output=True,
+                    text=True,
+                    cwd=self.root_dir,
+                    check=False
+                )
                 return {
                     "success": res.returncode == 0,
                     "stdout": res.stdout,
                     "stderr": res.stderr
                 }
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 return {"success": False, "stderr": str(e)}
         return {"success": False, "stderr": f"Unsupported auto-repair linter: {linter}"}

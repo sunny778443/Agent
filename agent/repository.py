@@ -53,16 +53,15 @@ class RepositoryAnalyzer:
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
                         imports.append(alias.name)
-                elif isinstance(node, ast.ImportFrom):
-                    if node.module:
-                        imports.append(node.module)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imports.append(node.module)
 
             return {
                 "classes": classes,
                 "functions": functions,
                 "imports": imports
             }
-        except Exception:
+        except (SyntaxError, OSError, UnicodeDecodeError):
             return None
 
     def build_dependency_graph(self) -> dict[str, list[str]]:
@@ -85,10 +84,9 @@ class RepositoryAnalyzer:
                 if analysis:
                     deps = []
                     for imp in analysis["imports"]:
-                        # Check if imported module is inside our repo
-                        for mod in python_modules:
+                        for mod, mod_file in python_modules.items():
                             if imp == mod or imp.startswith(mod + "."):
-                                deps.append(python_modules[mod])
+                                deps.append(mod_file)
                     graph[f] = list(set(deps))
         return graph
 
@@ -99,7 +97,6 @@ class RepositoryAnalyzer:
         dep_graph = self.build_dependency_graph()
         affected = {modified_file}
 
-        # Simple BFS / transitive closure over inverse dependency edges
         changed = True
         while changed:
             original_len = len(affected)
@@ -109,7 +106,7 @@ class RepositoryAnalyzer:
             if len(affected) == original_len:
                 changed = False
 
-        return sorted(list(affected))
+        return sorted(affected)
 
     def build_project_context(self) -> dict[str, Any]:
         """

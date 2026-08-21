@@ -34,7 +34,6 @@ class PersistentMemory:
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            # Table to store execution steps and actions taken
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS execution_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +43,6 @@ class PersistentMemory:
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            # Table to store past bugs and successful repairs/fixes
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS bug_fixes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +53,6 @@ class PersistentMemory:
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            # Table to store generalized project knowledge, styles, preferences, and reflections
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS project_knowledge (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +61,6 @@ class PersistentMemory:
                     category TEXT
                 )
             """)
-            # Table to store complete experience records
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS experience_memory (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +111,6 @@ class PersistentMemory:
             rows = cursor.fetchall()
             for row in rows:
                 sig = row["bug_signature"].lower()
-                logs = row["error_logs"].lower()
                 err = error_text.lower()
 
                 sig_words = set(re.findall(r"\w+", sig))
@@ -254,7 +249,7 @@ class PersistentMemory:
                         "variance": round(variance, 4),
                         "status": "calibrated" if attempts >= 3 else "insufficient_data"
                     }
-        except Exception:
+        except sqlite3.Error:
             pass
 
         return stats
@@ -301,8 +296,7 @@ class PersistentMemory:
                         "similarity": similarity,
                         "timestamp": r["timestamp"]
                     })
-                except Exception:
+                except (json.JSONDecodeError, ValueError, TypeError):
                     continue
-        # Sort descending by similarity score
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:limit]

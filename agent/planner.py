@@ -24,7 +24,13 @@ class Planner:
         """
         return self.create_execution_plan_with_context(task_description, memory_context="")
 
-    def create_execution_plan_with_context(self, task_description: str, memory_context: str = "", historical_success_rate: float | None = None, sample_count: int = 0) -> dict[str, Any]:
+    def create_execution_plan_with_context(
+        self,
+        task_description: str,
+        memory_context: str = "",
+        historical_success_rate: float | None = None,
+        sample_count: int = 0
+    ) -> dict[str, Any]:
         """
         Generates an execution plan enriched with past memory and heuristics.
         Computes planner confidence scores dynamically based on actual historical success rates
@@ -38,7 +44,6 @@ class Planner:
         elif any(w in task_description.lower() for w in ["add", "new", "create", "implement"]):
             risk_score = 0.3
 
-        # Compute evidence-based confidence metrics
         confidence_score = None
         observed_success_rate = None
         confidence_source = "None - Insufficient historical observations available to calibrate confidence stably."
@@ -50,16 +55,13 @@ class Planner:
             confidence_source = "SQLite Experience Memory Logs"
         elif memory_context and "matching historical" in memory_context:
             try:
-                # Parse matches count directly from context evidence string
                 matches_count = int(memory_context.split("Found ")[1].split()[0])
                 calculated_sample_count = matches_count
                 if matches_count >= 1:
-                    # Let's say we assume a conservative success expectation based purely on the sample density
-                    # but we do NOT fabricate success probabilities out of thin air.
                     confidence_score = None
                     observed_success_rate = None
                     confidence_source = f"Uncalibrated - Found {matches_count} matching task files in memory"
-            except Exception:
+            except (ValueError, IndexError):
                 pass
 
         if self.llm.provider == "mock":
@@ -94,7 +96,6 @@ Example output:
 """
         raw_res = self.llm.generate(prompt)
         try:
-            # strip markdown block ticks if returned
             if raw_res.strip().startswith("```"):
                 cleaned = raw_res.strip().strip("`").strip("json").strip()
                 data = json.loads(cleaned)
@@ -106,8 +107,7 @@ Example output:
             data["observed_success_rate"] = observed_success_rate
             data["confidence_source"] = confidence_source
             return data
-        except Exception:
-            # Fallback
+        except (json.JSONDecodeError, TypeError, ValueError):
             return {
                 "overall_risk_score": risk_score,
                 "risk_assessment": "Low risk setup",

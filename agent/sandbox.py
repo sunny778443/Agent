@@ -3,14 +3,19 @@ Sandboxed Execution environment inside Docker.
 Limits CPU, RAM, disk usage, and execution time to prevent security hazards and resource starvation.
 Reverts/destroys container state cleanly after operations are complete.
 """
+import logging
 import os
+import subprocess
 import time
 from typing import Any
+
+logger = logging.getLogger("agent.sandbox")
 
 try:
     import docker
 except ImportError:
     docker = None
+
 
 class SandboxRunner:
     """
@@ -22,11 +27,10 @@ class SandboxRunner:
         self.memory_limit = memory_limit
         self.timeout = timeout
 
-        # Initialize docker client safely
         if docker is not None:
             try:
                 self.client = docker.from_env()
-            except Exception:
+            except (docker.errors.DockerException, AttributeError, OSError):
                 self.client = None
         else:
             self.client = None
@@ -37,18 +41,16 @@ class SandboxRunner:
         Falls back gracefully if Docker daemon is not accessible, with safety/limit simulation.
         """
         if self.client is None:
-            # Fallback local runner with simulated sandbox restrictions
-            import subprocess
             start_time = time.time()
             try:
-                # We enforce timeout
                 result = subprocess.run(
                     command,
                     shell=True,
                     cwd=bind_dir,
                     capture_output=True,
                     text=True,
-                    timeout=self.timeout
+                    timeout=self.timeout,
+                    check=False
                 )
                 duration = time.time() - start_time
                 return {
@@ -69,7 +71,7 @@ class SandboxRunner:
                     "sandboxed": False,
                     "resource_usage": {}
                 }
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 duration = time.time() - start_time
                 return {
                     "exit_code": -1,
@@ -80,15 +82,12 @@ class SandboxRunner:
                     "resource_usage": {}
                 }
 
-        # Real docker sandboxing execution
         container = None
         try:
             volumes = {}
             if bind_dir:
                 volumes[os.path.abspath(bind_dir)] = {"bind": "/workspace", "mode": "rw"}
 
-            # Standard constraints: cpu, memory
-            # docker-py expects mem_limit, nano_cpus (1 cpu = 1,000,000,000 nano_cpus)
             nano_cpus = int(self.cpu_limit * 1_000_000_000)
 
             container = self.client.containers.create(
@@ -104,7 +103,6 @@ class SandboxRunner:
             start_time = time.time()
             container.start()
 
-            # Check for completion with manual timeout
             exit_code = None
             while time.time() - start_time < self.timeout:
                 container.reload()
@@ -115,14 +113,12 @@ class SandboxRunner:
                 time.sleep(0.5)
 
             if exit_code is None:
-                # Timed out - kill and clean
                 container.kill()
                 exit_code = -1
                 stdout = ""
                 stderr = "Sandboxed execution timed out."
             else:
                 logs = container.logs(stdout=True, stderr=True).decode("utf-8", errors="ignore")
-                # Split stdout and stderr if possible, or bundle
                 stdout = logs
                 stderr = ""
 
@@ -139,7 +135,7 @@ class SandboxRunner:
                 }
             }
 
-        except Exception as e:
+        except (docker.errors.DockerException, RuntimeError, OSError) as e:
             return {
                 "exit_code": -1,
                 "stdout": "",
@@ -152,5 +148,5 @@ class SandboxRunner:
             if container is not None:
                 try:
                     container.remove(force=True)
-                except Exception:
-                    pass
+                except (docker.errors.DockerException, AttributeError, OSError) as e:
+                    logger.debug("Failed to remove container: %s", e)

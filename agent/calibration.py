@@ -3,21 +3,42 @@ Confidence Calibration and Verification module for Project Karthikeya.
 Implements computational models for:
 - Brier Score calculation
 - Expected Calibration Error (ECE) calculation
+- Wilson Score Confidence Interval calculation
 - Strategy Learning exploitation metrics
 """
 import math
-from typing import List, Dict, Any, Tuple
+from typing import Any
 
 
 class ConfidenceCalibrator:
     """
     Evaluates how closely predicted planner/execution confidence scores align
-    with actual sandbox success probabilities using Brier and Expected Calibration Error (ECE).
+    with actual sandbox success probabilities using Brier, Expected Calibration Error (ECE),
+    and Wilson Score Intervals.
     """
     def __init__(self, num_bins: int = 5) -> None:
         self.num_bins = num_bins
 
-    def compute_brier_score(self, predictions: List[float], outcomes: List[float]) -> float:
+    def calculate_wilson_score_interval(self, k: int, n: int, confidence: float = 0.95) -> tuple[float, float]:
+        """
+        Computes the Wilson Score Interval for binomial proportion from scratch.
+        Prevents Wald/normal approximation breakdown at extreme boundaries (k=0 or k=n).
+        """
+        if n == 0:
+            return 0.0, 0.0
+
+        z = 1.95996
+        p = k / n
+
+        denominator = 1.0 + (z ** 2) / n
+        center = (p + (z ** 2) / (2 * n)) / denominator
+        spread = (z / denominator) * math.sqrt((p * (1.0 - p) / n) + (z ** 2) / (4 * (n ** 2)))
+
+        lower = max(0.0, center - spread)
+        upper = min(1.0, center + spread)
+        return lower, upper
+
+    def compute_brier_score(self, predictions: list[float], outcomes: list[float]) -> float:
         """
         Computes the standard Brier Score for probability calibration:
         BS = 1/N * sum((p_t - y_t)^2)
@@ -27,7 +48,7 @@ class ConfidenceCalibrator:
         total_error = sum((p - y) ** 2 for p, y in zip(predictions, outcomes))
         return total_error / len(predictions)
 
-    def compute_expected_calibration_error(self, predictions: List[float], outcomes: List[float]) -> float:
+    def compute_expected_calibration_error(self, predictions: list[float], outcomes: list[float]) -> float:
         """
         Computes the Expected Calibration Error (ECE) stably across partitioned bins:
         ECE = sum(|B_m|/N * |acc(B_m) - conf(B_m)|)
@@ -36,13 +57,9 @@ class ConfidenceCalibrator:
         if n == 0 or len(predictions) != len(outcomes):
             return 0.0
 
-        # Define bins (e.g. 5 bins: [0.0, 0.2), [0.2, 0.4), [0.4, 0.6), [0.6, 0.8), [0.8, 1.0])
-        bins_limits = [i / self.num_bins for i in range(self.num_bins + 1)]
         bins_indices = {i: [] for i in range(self.num_bins)}
 
-        # Assign predictions and outcomes to bins
-        for idx, (p, y) in enumerate(zip(predictions, outcomes)):
-            # Handle boundary case: p = 1.0 goes to the last bin
+        for p, y in zip(predictions, outcomes):
             if p >= 1.0:
                 bin_idx = self.num_bins - 1
             else:
@@ -50,23 +67,18 @@ class ConfidenceCalibrator:
             bins_indices[bin_idx].append((p, y))
 
         ece = 0.0
-        for bin_idx, items in bins_indices.items():
+        for items in bins_indices.values():
             bin_size = len(items)
             if bin_size == 0:
                 continue
 
-            # Compute bin accuracy (fraction of outcomes that are positive)
             acc = sum(y for _, y in items) / bin_size
-
-            # Compute average predicted confidence in the bin
             conf = sum(p for p, _ in items) / bin_size
-
-            # Accumulate weighted absolute difference
             ece += (bin_size / n) * abs(acc - conf)
 
         return ece
 
-    def get_calibration_summary(self, predictions: List[float], outcomes: List[float]) -> Dict[str, Any]:
+    def get_calibration_summary(self, predictions: list[float], outcomes: list[float]) -> dict[str, Any]:
         """Returns a formatted calibration metrics summary."""
         brier = self.compute_brier_score(predictions, outcomes)
         ece = self.compute_expected_calibration_error(predictions, outcomes)

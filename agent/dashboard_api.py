@@ -4,17 +4,17 @@ Exposes real-time agent memory, task logs, sandbox telemetry, and repository ove
 """
 import json
 import sqlite3
+from typing import Any
+
+import psutil
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
-import os
-import psutil
+
 from agent.engine import Engine
 
 app = FastAPI(title="Autonomous Software Agent Dashboard API", version="1.0.0")
 
-# Enable CORS for frontend dashboard queries
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,15 +23,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global or single active Engine instance representing current workspace context
-# We specify memory.db explicitly to avoid conflicts during runs
 engine = Engine(workspace_path=".", db_path="memory.db")
+
 
 class TaskRequest(BaseModel):
     task: str
 
+
 @app.get("/api/status")
-def get_status() -> Dict[str, Any]:
+def get_status() -> dict[str, Any]:
     """Retrieves real-time resource telemetry and current state."""
     cpu = 0.0
     mem_pct = 0.0
@@ -40,7 +40,7 @@ def get_status() -> Dict[str, Any]:
         cpu = psutil.cpu_percent()
         mem_pct = psutil.virtual_memory().percent
         mem_avail = psutil.virtual_memory().available / (1024 * 1024)
-    except Exception:
+    except (psutil.Error, OSError, RuntimeError):
         pass
 
     return {
@@ -54,38 +54,43 @@ def get_status() -> Dict[str, Any]:
         }
     }
 
+
 @app.post("/api/task")
-def start_task(req: TaskRequest) -> Dict[str, Any]:
+def start_task(req: TaskRequest) -> dict[str, Any]:
     """Triggers autonomous run for the specified user request."""
     try:
         res = engine.execute_task(req.task)
         return res
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (RuntimeError, ValueError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.get("/api/logs")
-def get_logs() -> List[Dict[str, Any]]:
+def get_logs() -> list[dict[str, Any]]:
     """Returns historical run execution details."""
     return engine.logs
 
+
 @app.get("/api/repository")
-def get_repository() -> Dict[str, Any]:
+def get_repository() -> dict[str, Any]:
     """Exposes mapped project structural maps and AST data."""
     try:
         return engine.repo_analyzer.build_project_context()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (RuntimeError, ValueError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.get("/api/memory")
-def get_memory() -> List[Dict[str, Any]]:
+def get_memory() -> list[dict[str, Any]]:
     """Returns stored preferences, keys, and past success profiles."""
     try:
         return engine.memory.get_all_knowledge()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (sqlite3.Error, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.get("/api/reflections")
-def get_reflections() -> List[Dict[str, Any]]:
+def get_reflections() -> list[dict[str, Any]]:
     """Retrieves all self-reflections saved by the agent."""
     try:
         reflections = []
@@ -97,22 +102,24 @@ def get_reflections() -> List[Dict[str, Any]]:
             for r in rows:
                 try:
                     reflections.append(json.loads(r["value"]))
-                except Exception:
+                except (json.JSONDecodeError, ValueError, TypeError):
                     reflections.append({
                         "key": r["key"],
                         "raw_value": r["value"]
                     })
         return reflections
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (sqlite3.Error, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.get("/api/strategy_rankings")
-def get_strategy_rankings() -> Dict[str, float]:
+def get_strategy_rankings() -> dict[str, float]:
     """Retrieves computed success rate metrics for execution strategies."""
     return engine.memory.get_strategy_rankings()
 
+
 @app.get("/api/experiences")
-def get_experiences() -> List[Dict[str, Any]]:
+def get_experiences() -> list[dict[str, Any]]:
     """Retrieves raw experience logs from the persistent experience matrix database."""
     try:
         results = []
@@ -133,16 +140,16 @@ def get_experiences() -> List[Dict[str, Any]]:
                     "lessons_learned": r["lessons_learned"]
                 })
         return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except (sqlite3.Error, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.get("/api/training_metrics")
-def get_training_metrics() -> List[Dict[str, Any]]:
+def get_training_metrics() -> list[dict[str, Any]]:
     """
     Returns standard learning metrics history of the CodeCognitiveNetwork.
     Simulates stable training trace losses if not trained live, ensuring frontend charts can load.
     """
-    # Simulate a steady descent of MSE/MAE losses over 15 epochs
     history = []
     base_loss = 0.25
     base_mae = 0.38
