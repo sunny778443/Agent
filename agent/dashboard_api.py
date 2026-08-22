@@ -1,6 +1,6 @@
 """
 Dashboard API utilizing FastAPI.
-Exposes real-time agent memory, task logs, sandbox telemetry, and repository overview data.
+Exposes real-time agent memory, task logs, sandbox telemetry, repository overview data, and codebase audit metrics.
 """
 import json
 import sqlite3
@@ -61,6 +61,15 @@ def start_task(req: TaskRequest) -> dict[str, Any]:
     try:
         res = engine.execute_task(req.task)
         return res
+    except (RuntimeError, ValueError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/audit")
+def get_audit() -> dict[str, Any]:
+    """Runs codebase audit for unused dependencies, security vulnerabilities, performance, and complexity."""
+    try:
+        return engine.audit_codebase()
     except (RuntimeError, ValueError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 

@@ -1,13 +1,14 @@
 """
 Core Engine Orchestrator module.
 Ties together planning, repository parsing, security safety checks, test suites,
-sandboxed runtimes, and the autonomous self-repair engine with strategy selection, reflections, and rewards.
+sandboxed runtimes, codebase auditing, and the autonomous self-repair engine.
 """
 import json
 import os
 import time
 from typing import Any
 
+from agent.auditor import CodebaseAuditor
 from agent.cognitive import CodeCognitiveNetwork
 from agent.github import GitHubManager
 from agent.llm import LLMClient
@@ -36,6 +37,7 @@ class Engine:
         self.memory = PersistentMemory(db_path)
         self.repair_loop = SelfRepairLoop(self.llm, self.memory)
         self.repair_engine = SelfRepairEngine(self.memory, self.llm)
+        self.auditor = CodebaseAuditor(self.workspace_path)
         self.github = GitHubManager(self.workspace_path)
         self.cognitive_net = CodeCognitiveNetwork()
         self.user_model = UserUnderstandingModel()
@@ -75,6 +77,16 @@ Example: src/math.py
         if not target or "/" not in target and not target.endswith((".py", ".ts", ".js")):
             return "src/main.py"
         return target
+
+    def audit_codebase(self) -> dict[str, Any]:
+        """
+        Runs comprehensive self-healing codebase audit for unused dependencies,
+        security vulnerabilities, performance bottlenecks, and cyclomatic complexity.
+        """
+        self.log_event("AUDIT_STARTED", {"workspace": self.workspace_path})
+        res = self.auditor.run_full_audit()
+        self.log_event("AUDIT_COMPLETED", res["summary"])
+        return res
 
     def repair_repository(
         self,
