@@ -27,10 +27,10 @@ class SandboxRunner:
         self.memory_limit = memory_limit
         self.timeout = timeout
 
-        if docker is not None:
+        if docker is not None and hasattr(docker, 'from_env'):
             try:
                 self.client = docker.from_env()
-            except (docker.errors.DockerException, AttributeError, OSError):
+            except Exception:
                 self.client = None
         else:
             self.client = None
@@ -135,7 +135,7 @@ class SandboxRunner:
                 }
             }
 
-        except (docker.errors.DockerException, RuntimeError, OSError) as e:
+        except Exception as e:
             return {
                 "exit_code": -1,
                 "stdout": "",
@@ -148,5 +148,5 @@ class SandboxRunner:
             if container is not None:
                 try:
                     container.remove(force=True)
-                except (docker.errors.DockerException, AttributeError, OSError) as e:
+                except Exception as e:
                     logger.debug("Failed to remove container: %s", e)
