@@ -176,3 +176,19 @@ def get_training_metrics() -> list[dict[str, Any]]:
         })
         lr *= 0.95
     return history
+
+
+class TradeRequest(BaseModel):
+    query: str
+    ticker: str | None = None
+
+
+@app.post("/api/trade")
+def run_trade_query(req: TradeRequest) -> dict[str, Any]:
+    """Runs financial web search, thinking, database query, and trading cycle."""
+    try:
+        from agent.trading_bot import TradingBot
+        bot = TradingBot()
+        return bot.execute_trading_cycle(req.query, ticker=req.ticker)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
